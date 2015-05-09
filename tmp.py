@@ -31,3 +31,34 @@ def recurrent_fn2(h_tm1, *y_tms):
     y_t = T.dot(h_t, W_hy) + b_y
     return h_t, y_t
 
+
+def fn2(): 
+    return 1, [2, 3]
+
+def fn3():
+    return 1, [2]
+
+def fnfn(num):
+    if num == 2:
+        return fn2()
+    elif num == 3:
+        return fn3()
+    else:
+        return 1, None
+
+a, bs = fnfn(1)
+if bs is not None:
+    for b in bs:
+        print b
+
+a, bs = fnfn(2)
+if bs is not None:
+    for b in bs:
+        print b
+
+a, bs = fnfn(3)
+if bs is not None:
+    for b in bs:
+        print b
+
+

@@ -166,6 +166,18 @@ def param_init_lstm(options, params, prefix='lstm'):
 
     return params
 
+def param_init_rnn(options, params, prefix='rnn'):
+    """
+    Init the RNN parameter:
+
+    :see: init_params
+    """
+    U = ortho_weight(options['dim_proj']) # dim_proj = 128
+    params[_p(prefix, 'U')] = U
+    b = numpy.zeros(options['dim_proj'])
+    params[_p(prefix, 'b')] = b.astype(config.floatX)
+
+    return params
 
 def lstm_layer(tparams, state_below, options, prefix='lstm', mask=None):
     # state_below = input = emb = n_timesteps x n_samples x 128
@@ -202,8 +214,8 @@ def lstm_layer(tparams, state_below, options, prefix='lstm', mask=None):
 
         return h, c
 
-    #state_below = (tensor.dot(state_below, tparams[_p(prefix, 'W')]) +
-    #               tparams[_p(prefix, 'b')])
+    state_below = (tensor.dot(state_below, tparams[_p(prefix, 'W')]) +
+                   tparams[_p(prefix, 'b')])
 
     dim_proj = options['dim_proj']
     rval, updates = theano.scan(_step,
@@ -216,12 +228,49 @@ def lstm_layer(tparams, state_below, options, prefix='lstm', mask=None):
                                                            dim_proj)],
                                 name=_p(prefix, '_layers'),
                                 n_steps=nsteps)
-    return rval # rval[0] = h, rval[1] = c, this task requires h of lstm layer. 
+    return rval[0], [rval[1]] # rval[0] = h, rval[1] = c, this task requires h of lstm layer. 
+
+
+def rnn_layer(tparams, state_below, options, prefix='rnn', mask=None):
+    # state_below = input = emb = n_timesteps x n_samples x 128
+    nsteps = state_below.shape[0] # state_below = emb, state_below.shape[0] = x.shape[0] = n_timesteps
+    if state_below.ndim == 3:
+        n_samples = state_below.shape[1]
+    else:
+        n_samples = 1
+
+    assert mask is not None
+
+    def _slice(_x, n, dim):
+        if _x.ndim == 3:
+            return _x[:, :, n * dim:(n + 1) * dim]
+        return _x[:, n * dim:(n + 1) * dim]
+
+    def _step(m_, x_, h_): # m_: mask, x_: input, h_: previous hidden
+        print "x_.shape : ", x_.shape
+        print "x_.ndim : ", x_.ndim 
+        h = tensor.dot(h_, tparams[_p(prefix, 'U')])
+        h += x_
+        h += tparams[_p(prefix, 'b')]
+        h = tensor.tanh(h)
+        return h
+
+    dim_proj = options['dim_proj']
+    rval, updates = theano.scan(_step,
+                                sequences=[mask, state_below],
+                                outputs_info=[tensor.alloc(numpy_floatX(0.),
+                                                           n_samples,
+                                                           dim_proj)],
+                                name=_p(prefix, '_layers'),
+                                n_steps=nsteps)
+    return rval, None # rval[0] = h 
 
 
 # ff: Feed Forward (normal neural net), only useful to put after lstm
 #     before the classifier.
-layers = {'lstm': (param_init_lstm, lstm_layer)}
+layers = {'lstm': (param_init_lstm, lstm_layer), 
+          'rnn': (param_init_rnn, rnn_layer)}
+
 
 def sgd(lr, tparams, grads, x, mask, y, cost):
     """ Stochastic Gradient Descent
@@ -232,7 +281,7 @@ def sgd(lr, tparams, grads, x, mask, y, cost):
     """
     # New set of shared variable that will contain the gradient
     # for a mini-batch.
-    gshared = [theano.shared(p.get_value() * 0.95, name='%s_grad' % k)
+    gshared = [theano.shared(p.get_value() * 0.5, name='%s_grad' % k)
                for k, p in tparams.iteritems()]
     gsup = [(gs, g) for gs, g in zip(gshared, grads)]
 
@@ -343,19 +392,18 @@ def build_model(tparams, options):
     # x.flatten() is sequence of indices of words with length n_timesteps x n_samples
     # tparams['Wemb'][x.flatten()] is (n_timesteps x n_samples) x 128
 
-    prefix = options['encoder']
-    state_below = (tensor.dot(emb, tparams[_p(prefix, 'W')]) +
-                   tparams[_p(prefix, 'b')])
-    f_state_below = theano.function(inputs=[emb], outputs=state_below)
- 
-    '''projs = get_layer(options['encoder'])[1](tparams, emb, options,    # lstm_layer
-                                            prefix=options['encoder'],
-                                            mask=mask)'''
-    projs = get_layer(options['encoder'])[1](tparams, state_below, options,    # lstm_layer
+    prefix=options['encoder']
+    print 'tparams[_p(prefix, 'U')].ndim: ', tparams[_p(prefix, 'U')].ndim
+
+    proj, hiddens = get_layer(options['encoder'])[1](tparams, emb, options,    # lstm_layer
                                             prefix=options['encoder'],
                                             mask=mask)
-
-    proj = projs[0] # projs[0] = h, projs[0] = c
+    f_hiddens = []
+    f_hiddens.append(theano.function(inputs=[x, mask], outputs=proj))
+    if hiddens is not None:
+        for f_hidden in hiddens:
+            f_hiddens.append(theano.function(inputs=[x, mask], outputs=f_hidden))
+    print "len(f_hiddens): %d" % len(f_hiddens)
 
     '''if options['encoder'] == 'lstm':
         proj = (proj * mask[:, :, None]).sum(axis=0)
@@ -366,7 +414,7 @@ def build_model(tparams, options):
     # irrelavant activities of proj should be ignored. so, mask is used for that. 
     # Then, why proj has summed up?
     #       => since the model we assumed multiply 'U' with mean pulled hidden activities.   
-
+    
     if options['use_dropout']:
         proj = dropout_layer(proj, use_noise, trng)
     f_proj = theano.function(inputs=[x, mask], outputs=proj)
@@ -377,8 +425,6 @@ def build_model(tparams, options):
     #f_pred_prob = theano.function([x, mask], pred, name='f_pred_prob')
     #f_pred = theano.function([x, mask], pred.argmax(axis=1), name='f_pred')
     f_pred = theano.function([x, mask], pred, name='f_pred')
-    f_pred_h_and_c = theano.function(inputs=[x, mask],
-                             outputs=[projs[0], projs[1]], name='f_pred_h_and_c')
 
     #cost = -tensor.log(pred[tensor.arange(n_samples), y] + 1e-8).mean()
            # pred[tensor.arange(n_samples), y] ???
@@ -390,8 +436,8 @@ def build_model(tparams, options):
     cost = theano.tensor.mean(cost)
 
     #return use_noise, x, mask, y, f_pred_prob, f_pred, cost
-    return use_noise, x, mask, y, f_pred, cost, f_pred_h_and_c, f_emb, f_state_below, f_proj
-
+    #return use_noise, x, mask, y, f_pred, cost, f_pred_h_and_c, f_emb, f_proj
+    return use_noise, x, mask, y, f_pred, cost, f_hiddens
 
 def pred_error(f_pred, prepare_data, input_dim, output_dim, data, iterator, verbose=False):
     """
@@ -539,18 +585,230 @@ def build_pred_model(tparams, options, n_timesteps=1, input_dim=1):
 
     return h0, c0, y0, f_predpred
 
+def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1):
+    trng = RandomStreams(1234)
+
+    # Used for dropout.
+    use_noise = theano.shared(numpy_floatX(0.))
+    use_noise.set_value(0.)
+
+    prefix=options['encoder']
+
+    print "part1"
+
+    def _slice(_x, n, dim):
+        if _x.ndim == 3:
+            return _x[:, :, n * dim:(n + 1) * dim]
+        return _x[:, n * dim:(n + 1) * dim]
+
+    #def _step(m_, x_, h_, c_): # m_: mask, x_: input, h_: previous hidden, c_: previous hidden
+    def _step(h_, c_, *y_): # m_: mask, h_: previous hidden, c_: previous hidden, *y_: raw inputs
+        print "h_.ndim: ", h_.ndim
+        print "c_.ndim: ", c_.ndim
+        
+        print "len(y_): ", len(y_)
+        print "y_[0].shape: ", y_[0].shape # y_[0] has size of n_samples x output_dim (output_dim = 1 for sinewave example)
+        print "y_[0].ndim: ", y_[0].ndim
+
+        # build x_ from y_
+        x_ = y_[0]
+        for y_tmp in y_[1:]:
+            x_ = tensor.concatenate([x_, y_tmp], axis=1)
+
+        print theano.pp(x_)
+        h_printed_ = theano.printing.Print('h_ in step')(h_)
+        c_printed_ = theano.printing.Print('c_ in step')(c_) 
+        x_printed_ = theano.printing.Print('x_ in step')(x_)
+
+        print "x_.ndim: ", x_.ndim
+        # embedding and activation
+        #emb_ = tensor.dot(x_, tparams['Wemb'])
+        emb_ = tensor.dot(x_printed_, tparams['Wemb']) 
+        print "emb_.ndim: ", emb_.ndim
+
+        emb_printed_ = theano.printing.Print('emb_ in step')(emb_)
+
+        #state_below_ = (tensor.dot(emb_, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')])
+        state_below_ = (tensor.dot(emb_printed_, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')])
+        print "state_below_.ndim: ", state_below_.ndim
+        print "tparams[lstm_W].ndim: ", tparams['lstm_W'].ndim
+        state_below_printed_ = theano.printing.Print('state_below_ in step')(state_below_)
+
+         
+        #preact = tensor.dot(h_, tparams[_p(prefix, 'U')])
+        preact = tensor.dot(h_printed_, tparams[_p(prefix, 'U')])
+        #preact += state_below_ # x_
+        preact += state_below_printed_ # x_
+        preact += tparams[_p(prefix, 'b')]
+        print "preact.ndim: ", preact.ndim
+
+        i = tensor.nnet.sigmoid(_slice(preact, 0, options['dim_proj']))
+        f = tensor.nnet.sigmoid(_slice(preact, 1, options['dim_proj']))
+        o = tensor.nnet.sigmoid(_slice(preact, 2, options['dim_proj']))
+        c = tensor.tanh(_slice(preact, 3, options['dim_proj']))
+
+        #c = f * c_ + i * c
+        c = f * c_printed_ + i * c
+        #c = m_[:, None] * c + (1. - m_)[:, None] * c_  # if data is valid m_ = 1, else m_ = 0 (ignore the data)
+        c_printed = theano.printing.Print('c in step')(c)
+        c = c_printed 
+
+        h = o * tensor.tanh(c)
+        #h = m_[:, None] * h + (1. - m_)[:, None] * h_
+        h_printed = theano.printing.Print('h in step')(h)
+        h = h_printed
+
+        if options['use_dropout']:
+            #h = dropout_layer(h, use_noise, trng)
+            proj = h * 0.5
+        else: 
+            proj = h
+        
+        proj_printed = theano.printing.Print('proj in step')(proj)
+
+        #y = tensor.dot(h, tparams['U']) + tparams['b']  # tparams['U'] has size of dim_proj x output_dim (128 x 1 for sinewave example)
+        y = tensor.dot(proj_printed, tparams['U']) + tparams['b']  # tparams['U'] has size of dim_proj x output_dim (128 x 1 for sinewave example)
+        y_printed = theano.printing.Print('y in step')(y) 
+        y = y_printed
+        print "h.ndim: ", h.ndim
+        print "c.ndim: ", c.ndim
+        print "y.ndim: ", y.ndim
+        return h, c, y
+
+    h0 = tensor.matrix('h', dtype=config.floatX) # 1 x n_samples x dim_proj
+    c0 = tensor.matrix('c', dtype=config.floatX) # 1 x n_samples x dim_proj
+    y0 = tensor.tensor3('y', dtype=config.floatX) # input_dim x n_samples x output_dim
+
+    #n_timesteps = 150
+    #input_dim = y0.shape[0]
+    #n_samples = y0.shape[1]
+    #output_dim = y0.shape[2]
+    dim_proj = options['dim_proj']
+
+    y_taps = []
+    for t in xrange(-input_dim, 0, 1):
+        y_taps.append(t)
+
+    rval, updates = theano.scan(_step,
+                                #sequences=[mask, state_below],
+                                outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved 
+                                              dict(initial=c0, taps=[-1]), # h0.ndim = 2 will be preserved
+                                              dict(initial=y0, taps=y_taps)], # y0.ndim = 3 will become y_[0].ndim = 2 
+                                                                              # usage of taps is tricky!! fuck!!
+                                name=_p(prefix, '_layers'),
+                                n_steps=n_timesteps)
+
+    f_predpred = theano.function(inputs=[h0, c0, y0], 
+                             outputs=[rval[2]], 
+                             name='f_pred')
+    # rval[0] = h, rval[1] = c, rval[2] = y. 
+    # prediction requires y.
+
+    return f_predpred
+
+def build_rnn_pred_model(tparams, options, n_timesteps=1, input_dim=1):
+    trng = RandomStreams(1234)
+
+    # Used for dropout.
+    use_noise = theano.shared(numpy_floatX(0.))
+    use_noise.set_value(0.)
+
+    prefix=options['encoder']
+
+    print "part1"
+
+    def _slice(_x, n, dim):
+        if _x.ndim == 3:
+            return _x[:, :, n * dim:(n + 1) * dim]
+        return _x[:, n * dim:(n + 1) * dim]
+
+    #def _step(m_, x_, h_, c_): # m_: mask, x_: input, h_: previous hidden, c_: previous hidden
+    def _step(h_, *y_): # m_: mask, h_: previous hidden, *y_: raw inputs
+        #print "h_.ndim: ", h_.ndim
+        #print "len(y_): ", len(y_)
+        #print "y_[0].shape: ", y_[0].shape # y_[0] has size of n_samples x output_dim (output_dim = 1 for sinewave example)
+        #print "y_[0].ndim: ", y_[0].ndim
+
+        # build x_ from y_
+        x_ = y_[0]
+        for y_tmp in y_[1:]:
+            x_ = tensor.concatenate([x_, y_tmp], axis=1)
+
+        print theano.pp(x_)
+        h_printed_ = theano.printing.Print('h_ in step')(h_)
+        x_printed_ = theano.printing.Print('x_ in step')(x_)
+
+        print "x_.ndim: ", x_.ndim
+        # embedding and activation
+        #emb_ = tensor.dot(x_, tparams['Wemb'])
+        emb_ = tensor.dot(x_printed_, tparams['Wemb']) 
+        print "emb_.ndim: ", emb_.ndim
+
+        emb_printed_ = theano.printing.Print('emb_ in step')(emb_)
+
+        h = tensor.dot(h_printed_, tparams[_p(prefix, 'U')])
+        #h += emb_ # x_
+        h += emb_printed_ # x_
+        h += tparams[_p(prefix, 'b')]
+        h = tensor.tanh(h)
+
+        if options['use_dropout']:
+            #h = dropout_layer(h, use_noise, trng)
+            proj = h * 0.5
+        else: 
+            proj = h
+        
+        proj_printed = theano.printing.Print('proj in step')(proj)
+
+        #y = tensor.dot(h, tparams['U']) + tparams['b']  # tparams['U'] has size of dim_proj x output_dim (128 x 1 for sinewave example)
+        y = tensor.dot(proj_printed, tparams['U']) + tparams['b']  # tparams['U'] has size of dim_proj x output_dim (128 x 1 for sinewave example)
+        y_printed = theano.printing.Print('y in step')(y) 
+        y = y_printed
+        print "h.ndim: ", h.ndim
+        print "y.ndim: ", y.ndim
+        return h, y
+
+    h0 = tensor.matrix('h', dtype=config.floatX) # 1 x n_samples x dim_proj
+    y0 = tensor.tensor3('y', dtype=config.floatX) # input_dim x n_samples x output_dim
+
+    #n_timesteps = 150
+    #input_dim = y0.shape[0]
+    #n_samples = y0.shape[1]
+    #output_dim = y0.shape[2]
+    dim_proj = options['dim_proj']
+
+    y_taps = []
+    for t in xrange(-input_dim, 0, 1):
+        y_taps.append(t)
+
+    rval, updates = theano.scan(_step,
+                                #sequences=[mask, state_below],
+                                outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved 
+                                              dict(initial=y0, taps=y_taps)], # y0.ndim = 3 will become y_[0].ndim = 2 
+                                                                              # usage of taps is tricky!! fuck!!
+                                name=_p(prefix, '_layers'),
+                                n_steps=n_timesteps)
+
+    f_predpred = theano.function(inputs=[h0, y0], 
+                             outputs=[rval[1]], 
+                             name='f_pred')
+    # rval[0] = h, rval[1] = y. 
+    # prediction requires y.
+
+    return f_predpred
+
 
 def train_lstm(
-    dim_proj=10, #128,  # word embeding dimension and LSTM number of hidden units.
+    dim_proj=128,  # word embeding dimension and LSTM number of hidden units.
     patience=10,  # Number of epoch to wait before early stop if no progress
     max_epochs=5000,  # The maximum number of epoch to run
     dispFreq=10,  # Display to stdout the training progress every N updates
     decay_c=0.,  # Weight decay for the classifier applied to the U weights.
-    lrate=0.0001,  # Learning rate for sgd (not used for adadelta and rmsprop)
+    lrate=0.001, #0.0001,  # Learning rate for sgd (not used for adadelta and rmsprop)
     input_dim = 1, # input_dim, equivalent to Vocabulary size for sentiment analysis
     output_dim = 1, # output_dim, 
     #n_words=10000,  # Vocabulary size
-    optimizer=adadelta,  #adadelta,  # sgd, adadelta and rmsprop available, sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
+    optimizer=adadelta,  # sgd, adadelta and rmsprop available, sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
     encoder='lstm',  # TODO: can be removed must be lstm.
     saveto='lstm_model.npz',  # The best model will be saved there
     validFreq=370,  # Compute the validation error after this number of update.
@@ -590,7 +848,7 @@ def train_lstm(
     output = plt.plot(numpy.linspace(1, x.shape[0], y.shape[0]), y.reshape([y.shape[0], y.shape[2]]), linestyle='--', label='y_t, output')
     plt.title('sample input seq(u_t) and its output(y_t)')
     plt.legend()
-    plt.savefig('prepare_data_lstm_input_dim_5.png')
+    plt.savefig('prepare_data_%s_%s_input_dim_%d.png' % (model_options['encoder'], optimizer.__name__, input_dim))
 
     ydim = output_dim #numpy.max(train[1]) + 1 # why should y dimension be one larger than existing y values? 
     #print 'ydim %d' % numpy.max(train[1])
@@ -626,7 +884,7 @@ def train_lstm(
 
     # use_noise is for dropout
     (use_noise, x, mask,
-     y, f_pred, cost, f_pred_h_and_c, f_emb, f_state_below, f_proj) = build_model(tparams, model_options)
+     y, f_pred, cost, f_hiddens) = build_model(tparams, model_options)
 
     if decay_c > 0.:
         decay_c = theano.shared(numpy_floatX(decay_c), name='decay_c')
@@ -705,10 +963,11 @@ def train_lstm(
                 #asdf = f_pred(x, mask)
                 #print asdf
                 #print "asdf.shape: ", asdf.shape
-                
+                    
                 cost = f_grad_shared(x, mask, y)
                 f_update(lrate)
-
+  
+                #print "kasd;adfs;j;fadsk;"
                 if numpy.isnan(cost) or numpy.isinf(cost):
                     print 'NaN detected'
                     return 1., 1., 1.
@@ -775,23 +1034,28 @@ def train_lstm(
     valid_err = pred_error(f_pred, prepare_data, input_dim, output_dim, valid, kf_valid)
     test_err = pred_error(f_pred, prepare_data, input_dim, output_dim, test, kf_test)
 
-    print 'Train ', train_err, 'Valid ', valid_err, 'Test ', test_err
-    if saveto:
-        numpy.savez(saveto, train_err=train_err,
-                    valid_err=valid_err, test_err=test_err,
-                    history_errs=history_errs, **best_p)
-    print 'The code run for %d epochs, with %f sec/epochs' % (
-        (eidx + 1), (end_time - start_time) / (1. * (eidx + 1)))
-    print >> sys.stderr, ('Training took %.1fs' %
-                          (end_time - start_time))
+    if max_epochs > 0: 
+        print 'Train ', train_err, 'Valid ', valid_err, 'Test ', test_err
+
+        if saveto:
+            numpy.savez(saveto, train_err=train_err,
+                        valid_err=valid_err, test_err=test_err,
+                        history_errs=history_errs, **best_p)
+        print 'The code run for %d epochs, with %f sec/epochs' % (
+            (eidx + 1), (end_time - start_time) / (1. * (eidx + 1)))
+        print >> sys.stderr, ('Training took %.1fs' %
+                              (end_time - start_time))
 
 
     ##################################### prediction
     print "prediction start" 
     use_noise.set_value(0.)
 
-    (h0, c0, y0, f_predpred) = build_pred_model(tparams, model_options, n_timesteps=105, input_dim=input_dim)
-
+    if model_options['encoder']=='lstm':
+        f_predpred = build_lstm_pred_model(tparams, model_options, n_timesteps=105, input_dim=input_dim)
+    elif model_options['encoder']=='rnn':
+        f_predpred = build_rnn_pred_model(tparams, model_options, n_timesteps=105, input_dim=input_dim)
+ 
 #    kf = get_minibatches_idx(len(test[0]), batch_size, shuffle=True)
     kf = get_minibatches_idx(1, batch_size, shuffle=True)
     #print "batchsize = %d" % batch_size
@@ -819,8 +1083,7 @@ def train_lstm(
         plt.title('sample test data')
 
         # Save as a file
-        plt.savefig('data_lstm_input_dim_5.png')
-
+        plt.savefig('data_%s_%s_input_dim_5.png' % (model_options['encoder'], optimizer.__name__))
 
  
         x, mask, y = prepare_data(x, y, input_dim, output_dim)
@@ -836,68 +1099,20 @@ def train_lstm(
         print "xx[0, 0, :]: "
         print xx[0,0,:]
 
+        preds_y_all = f_pred(x, mask) # for debugging
+        
         preds_y = f_pred(xx, maskmask)
-        [preds_h, preds_c] = f_pred_h_and_c(xx, maskmask)
-     
-        preds_y_all = f_pred(x, mask)
-        [preds_h_all, preds_c_all] = f_pred_h_and_c(x, mask)
-        emb = f_emb(x)
-        state_below = f_state_below(emb)
-        proj = f_proj(x, mask)
+        if model_options['encoder']=='lstm':
+            preds_h = f_hiddens[0](xx, mask)
+            preds_c = f_hiddens[1](xx, maskmask)
 
-#    h0 = tensor.tensor3('h', dtype=config.floatX) # 1 x n_samples x dim_proj
-#    c0 = tensor.tensor3('c', dtype=config.floatX) # 1 x n_samples x dim_proj
-#    y0 = tensor.tensor3('y', dtype=config.floatX) # input_dim x n_samples x output_dim
-        print ""
-        print "x[49,:,:]: "; print x[49,:,:]
-        print "emb[49]: "; print emb[49]
-        print "state_below[49]: "; print state_below[49]
-        print "preds_h_all[49]: "; print preds_h_all[49]
-        print "preds_c_all[49]: "; print preds_c_all[49]
-        print "proj[49]: "; print proj[49]
-        print "preds_y_all[49]: "; print preds_y_all[49]
-        print ""
-        print "x[50,:,:]: "; print x[50,:,:]
-        print "emb[50]: "; print emb[50]
-        print "state_below[50]: "; print state_below[50]
-        print "preds_h_all[50]: "; print preds_h_all[50]
-        print "preds_c_all[50]: "; print preds_c_all[50]
-        print "proj[50]: "; print proj[50]
-        print "preds_y_all[50]: "; print preds_y_all[50]
-        print ""
-	print "x[51,:,:]: "; print x[51,:,:]
-	print "emb[51]: "; print emb[51]
-	print "state_below[51]: "; print state_below[51]
-	print "preds_h_all[51]: "; print preds_h_all[51]
-	print "preds_c_all[51]: "; print preds_c_all[51]
-	print "proj[51]: "; print proj[51]
-	print "preds_y_all[51]: "; print preds_y_all[51]
-	print ""
-	print "x[52,:,:]: "; print x[52,:,:]
-	print "emb[52]: "; print emb[52]
-	print "state_below[52]: "; print state_below[52]
-	print "preds_h_all[52]: "; print preds_h_all[52]
-	print "preds_c_all[52]: "; print preds_c_all[52]
-	print "proj[52]: "; print proj[52]
-	print "preds_y_all[52]: "; print preds_y_all[52]
-	print ""
-        print "preds_h[-1]: "; print preds_h[-1]
-        print "preds_c[-1]: "; print preds_c[-1]
-        print "preds_y[-input_dim:]: "; print preds_y[-input_dim:]
-        print ""
-        print "x[50,:,:]: "; print x[50,:,:]
-
-        #predpred = f_predpred(preds_h[-1], preds_c[-1], preds_y[-input_dim:])
-        print "preds_y[-input_dim:].shape: ", preds_y[-input_dim:].shape
-        print "x[50,:,:].shape: ", x[50,:,:].shape
-        predpred = f_predpred(preds_h[-1], preds_c[-1], x[50,:,:].reshape([input_dim, 1, 1]))
-
-
-        y_asdf = preds_y[:,0,0].tolist()
-        x_asdf, mask_asdf, y_asdf = prepare_data([y_asdf[:-1]], [y_asdf[1:]], input_dim, output_dim)
-        preds_y_asdf = f_pred(x_asdf, mask_asdf)
-
-
+            predpred = f_predpred(preds_h[-1], preds_c[-1], preds_y[-input_dim:])
+            #predpred = f_predpred(preds_h[-1], preds_c[-1], x[50,:,:].reshape([input_dim, 1, 1]))
+        elif model_options['encoder']=='rnn':
+            preds_h = f_hiddens[0](xx, mask)
+            predpred = f_predpred(preds_h[-1], preds_y[-input_dim:])
+            #predpred = f_predpred(preds_h[-1], x[50,:,:].reshape([input_dim, 1, 1]))
+          
     print "preds_y.shape: ", preds_y.shape
     print "len(predpred): ", len(predpred)
     print "predpred[0].shape", predpred[0].shape
@@ -922,9 +1137,10 @@ def train_lstm(
     plt.grid()
     plt.legend()
     plt.title('true output vs. model output')
-
+    plt.ylim((-3, 3))
+  
     # Save as a file
-    plt.savefig('pred_lstm_input_dim_5.png')
+    plt.savefig('pred_%s_%s_input_dim_5.png' % (model_options['encoder'], optimizer.__name__))
 
     
     return train_err, valid_err, test_err
@@ -933,27 +1149,33 @@ def train_lstm(
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
     input_dim = 5
-
+    dim_proj = 10
+    encoder = 'rnn'
     #mode = 'train'
     mode = 'test'
+    optimizer=sgd
 
     if mode=='train':
         train_lstm(
-            patience=10,  # Number of epoch to wait before early stop if no progress
+            dim_proj=dim_proj, 
             input_dim=input_dim, 
             #reload_model="lstm_model_%d.npz" % input_dim,
-            saveto="lstm_model_%d.npz" % input_dim, 
-            max_epochs=50,
+            saveto="model_%s_%s_%d.npz" % (encoder, optimizer.__name__, input_dim), 
+            max_epochs=400,
             test_size=500,
-            use_dropout=False
+            use_dropout=False,
+            encoder=encoder,
+            optimizer=optimizer
         )
     else: 
         train_lstm(
-            patience=10,  # Number of epoch to wait before early stop if no progress
+            dim_proj=dim_proj,
             input_dim=input_dim, 
-            reload_model="lstm_model_%d.npz" % input_dim,
+            reload_model="model_%s_%s_%d.npz" % (encoder, optimizer.__name__, input_dim),
             #saveto="lstm_model_%d.npz" % input_dim, 
-            max_epochs=1,
+            max_epochs=0,
             test_size=500,
-            use_dropout=False
+            use_dropout=False,
+            encoder=encoder,
+            optimizer=optimizer
         )
