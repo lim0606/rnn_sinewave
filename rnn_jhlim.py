@@ -145,21 +145,36 @@ def ortho_weight(ndim):
     return u.astype(config.floatX)
 
 
+def uniform_weight(ndim):
+    W = numpy.random.uniform(size = (ndim, ndim),
+                             low = -.01, high = .01)
+    return W.astype(config.floatX)
+
+
 def param_init_lstm(options, params, prefix='lstm'):
     """
     Init the LSTM parameter:
 
     :see: init_params
     """
+    '''
     W = numpy.concatenate([ortho_weight(options['dim_proj']),  # dim_proj = 128
                            ortho_weight(options['dim_proj']),
                            ortho_weight(options['dim_proj']),
-                           ortho_weight(options['dim_proj'])], axis=1)
+                           ortho_weight(options['dim_proj'])], axis=1)'''
+    W = numpy.concatenate([options['initializer'](options['dim_proj']),  # dim_proj = 128
+                           options['initializer'](options['dim_proj']),
+                           options['initializer'](options['dim_proj']),
+                           options['initializer'](options['dim_proj'])], axis=1)
     params[_p(prefix, 'W')] = W
-    U = numpy.concatenate([ortho_weight(options['dim_proj']),
+    '''U = numpy.concatenate([ortho_weight(options['dim_proj']),
                            ortho_weight(options['dim_proj']),
                            ortho_weight(options['dim_proj']),
-                           ortho_weight(options['dim_proj'])], axis=1)
+                           ortho_weight(options['dim_proj'])], axis=1)'''
+    U = numpy.concatenate([options['initializer'](options['dim_proj']), 
+                           options['initializer'](options['dim_proj']),
+                           options['initializer'](options['dim_proj']),
+                           options['initializer'](options['dim_proj'])], axis=1)
     params[_p(prefix, 'U')] = U
     b = numpy.zeros((4 * options['dim_proj'],))
     params[_p(prefix, 'b')] = b.astype(config.floatX)
@@ -172,7 +187,7 @@ def param_init_rnn(options, params, prefix='rnn'):
 
     :see: init_params
     """
-    U = ortho_weight(options['dim_proj']) # dim_proj = 128
+    U = options['initializer'](options['dim_proj']) #uniform_weight(options['dim_proj']) #ortho_weight(options['dim_proj']) # dim_proj = 128
     params[_p(prefix, 'U')] = U
     b = numpy.zeros(options['dim_proj'])
     params[_p(prefix, 'b')] = b.astype(config.floatX)
@@ -830,6 +845,7 @@ def train_lstm(
     input_dim = 1, # input_dim, equivalent to Vocabulary size for sentiment analysis
     output_dim = 1, # output_dim, 
     #n_words=10000,  # Vocabulary size
+    initializer=ortho_weight, # weight initialization method
     optimizer=adadelta,  # sgd, adadelta and rmsprop available, sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
     encoder='lstm',  # TODO: can be removed must be lstm.
     saveto='lstm_model.npz',  # The best model will be saved there
@@ -870,7 +886,7 @@ def train_lstm(
     output = plt.plot(numpy.linspace(1, x.shape[0], y.shape[0]), y.reshape([y.shape[0], y.shape[2]]), linestyle='--', label='y_t, output')
     plt.title('sample input seq(u_t) and its output(y_t)')
     plt.legend()
-    plt.savefig('prepare_data_%s_%s_input_dim_%d.png' % (model_options['encoder'], optimizer.__name__, input_dim))
+    plt.savefig('prepare_data_%s_%s_%s_input_dim_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim))
 
     ydim = output_dim #numpy.max(train[1]) + 1 # why should y dimension be one larger than existing y values? 
     #print 'ydim %d' % numpy.max(train[1])
@@ -1106,7 +1122,7 @@ def train_lstm(
             plt.title('sample test data, test_index =' % test_index[t])
 
             # Save as a file
-            plt.savefig('data_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, input_dim, test_index[t]))
+            plt.savefig('data_%s_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, test_index[t]))
 
  
         x, mask, y = prepare_data(x, y, input_dim, output_dim)
@@ -1153,7 +1169,7 @@ def train_lstm(
             plt.ylim((-3, 3))
   
             # Save as a file
-            plt.savefig('pred_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, input_dim, test_index[t]))
+            plt.savefig('pred_%s_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, test_index[t]))
 
     
     return train_err, valid_err, test_err
@@ -1161,34 +1177,37 @@ def train_lstm(
 
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
-    input_dim = 1
+    input_dim = 1 
     dim_proj = 10
-    encoder = 'lstm'
-    #mode = 'train'
-    mode = 'test'
-    optimizer=adadelta
-
+    encoder = 'rnn'
+    mode = 'train'
+    #mode = 'test'
+    optimizer=sgd
+    initializer=uniform_weight
+    filename="models/model_%s_%s_%s_%d.npz" % (encoder, optimizer.__name__, initializer.__name__, input_dim)
     if mode=='train':
         train_lstm(
             dim_proj=dim_proj, 
             input_dim=input_dim, 
-            #reload_model="lstm_model_%d.npz" % input_dim,
-            saveto="model_%s_%s_%d.npz" % (encoder, optimizer.__name__, input_dim), 
+            #reload_model=filename,
+            saveto=filename, 
             max_epochs=400,
             test_size=500,
             use_dropout=False,
             encoder=encoder,
+            initializer=initializer,
             optimizer=optimizer
         )
     else: 
         train_lstm(
             dim_proj=dim_proj,
             input_dim=input_dim, 
-            reload_model="model_%s_%s_%d.npz" % (encoder, optimizer.__name__, input_dim),
-            #saveto="lstm_model_%d.npz" % input_dim, 
+            reload_model=filename,
+            #saveto=filename, 
             max_epochs=0,
             test_size=500,
             use_dropout=False,
             encoder=encoder,
+            initializer=initializer, 
             optimizer=optimizer
         )
