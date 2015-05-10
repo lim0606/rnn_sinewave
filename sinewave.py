@@ -101,13 +101,13 @@ def load_data(valid_portion=0.1, maxlen=None, sort_by_len=False):
     seq_sine_beta_train = numpy.random.uniform(-1, 1, (n_train, 1))
     seq_sine_beta_test = numpy.random.uniform(-1, 1, (n_test, 1))
 
-    print seq_sine_alpha_train.shape
-    print seq_sine_beta_train.shape
+    #print seq_sine_alpha_train.shape
+    #print seq_sine_beta_train.shape
 
     sinewave_base = numpy.linspace(0, 2 * math.pi, length_sinewave)
     sinewave_x = sinewave_base[:-1:]
     sinewave_xp1 = sinewave_base[1::]
-    print "len(sinewave_x) = %d, len(sinewave_xp1) = %d" %(len(sinewave_x), len(sinewave_xp1))
+    #print "len(sinewave_x) = %d, len(sinewave_xp1) = %d" %(len(sinewave_x), len(sinewave_xp1))
 
     train_set_x = []
     train_set_y = []
@@ -136,9 +136,9 @@ def load_data(valid_portion=0.1, maxlen=None, sort_by_len=False):
     #print train_set[0][0] # a list with sentence's length (can vary)
     #print test_set[0][0]
     #print f
-    print "len(train_set) = %d" % len(train_set)
-    print "len(train_set[0]) = %d, len(train_set[1]) = %d" % (len(train_set[0]), len(train_set[1]))
-    print "len(train_set[0][0]) = %d, len(train_set[1][0]) = %d" % (len(train_set[0][0]), len(train_set[1][0])) 
+    #print "len(train_set) = %d" % len(train_set)
+    #print "len(train_set[0]) = %d, len(train_set[1]) = %d" % (len(train_set[0]), len(train_set[1]))
+    #print "len(train_set[0][0]) = %d, len(train_set[1][0]) = %d" % (len(train_set[0][0]), len(train_set[1][0])) 
     #print maxlen 
     if maxlen:
         new_train_set_x = []
@@ -166,7 +166,7 @@ def load_data(valid_portion=0.1, maxlen=None, sort_by_len=False):
 
     train_set = (train_set_x, train_set_y)
     valid_set = (valid_set_x, valid_set_y)
-   
+    '''
     plt.close('all')
     fig = plt.figure()
     print "len(sinewave_base) = %d " % len(sinewave_base)
@@ -175,7 +175,7 @@ def load_data(valid_portion=0.1, maxlen=None, sort_by_len=False):
     input_seq2 = plt.plot(sinewave_base[:-1], test_set[0][0], label='input seq2')
     plt.title('sample input sequences')
     plt.legend()
-    plt.savefig('data_lstm_input_dim_5.png')
+    plt.savefig('data_lstm_input_dim_5.png')'''
  
     #print "train_set: "
     #print train_set

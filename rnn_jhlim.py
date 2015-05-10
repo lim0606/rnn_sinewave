@@ -140,7 +140,7 @@ def get_layer(name):
 
 
 def ortho_weight(ndim):
-    W = numpy.random.randn(ndim, ndim)
+    W = 0.01 * numpy.random.randn(ndim, ndim)
     u, s, v = numpy.linalg.svd(W)
     return u.astype(config.floatX)
 
@@ -210,8 +210,8 @@ def lstm_layer(tparams, state_below, options, prefix='lstm', mask=None):
         return _x[:, n * dim:(n + 1) * dim]
 
     def _step(m_, x_, h_, c_): # m_: mask, x_: input, h_: previous hidden, c_: previous hidden
-        print "x_.shape : ", x_.shape
-        print "x_.ndim : ", x_.ndim 
+        #print "x_.shape : ", x_.shape
+        #print "x_.ndim : ", x_.ndim 
         preact = tensor.dot(h_, tparams[_p(prefix, 'U')])
         preact += x_
         preact += tparams[_p(prefix, 'b')]
@@ -262,8 +262,8 @@ def rnn_layer(tparams, state_below, options, prefix='rnn', mask=None):
         return _x[:, n * dim:(n + 1) * dim]
 
     def _step(m_, x_, h_): # m_: mask, x_: input, h_: previous hidden
-        print "x_.shape : ", x_.shape
-        print "x_.ndim : ", x_.ndim 
+        #print "x_.shape : ", x_.shape
+        #print "x_.ndim : ", x_.ndim 
         h = tensor.dot(h_, tparams[_p(prefix, 'U')])
         h += x_
         h += tparams[_p(prefix, 'b')]
@@ -408,7 +408,7 @@ def build_model(tparams, options):
     # tparams['Wemb'][x.flatten()] is (n_timesteps x n_samples) x 128
 
     prefix=options['encoder']
-    print 'tparams[_p(prefix, 'U')].ndim: ', tparams[_p(prefix, 'U')].ndim
+    #print 'tparams[_p(prefix, 'U')].ndim: ', tparams[_p(prefix, 'U')].ndim
 
     proj, hiddens = get_layer(options['encoder'])[1](tparams, emb, options,    # lstm_layer
                                             prefix=options['encoder'],
@@ -418,7 +418,7 @@ def build_model(tparams, options):
     if hiddens is not None:
         for f_hidden in hiddens:
             f_hiddens.append(theano.function(inputs=[x, mask], outputs=f_hidden))
-    print "len(f_hiddens): %d" % len(f_hiddens)
+    #print "len(f_hiddens): %d" % len(f_hiddens)
 
     '''if options['encoder'] == 'lstm':
         proj = (proj * mask[:, :, None]).sum(axis=0)
@@ -488,7 +488,7 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1):
 
     prefix=options['encoder']
 
-    print "part1"
+    #print "part1"
 
     def _slice(_x, n, dim):
         if _x.ndim == 3:
@@ -497,12 +497,12 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1):
 
     #def _step(m_, x_, h_, c_): # m_: mask, x_: input, h_: previous hidden, c_: previous hidden
     def _step(h_, c_, *y_): # m_: mask, h_: previous hidden, c_: previous hidden, *y_: raw inputs
-        print "h_.ndim: ", h_.ndim
-        print "c_.ndim: ", c_.ndim
+        #print "h_.ndim: ", h_.ndim
+        #print "c_.ndim: ", c_.ndim
         
-        print "len(y_): ", len(y_)
-        print "y_[0].shape: ", y_[0].shape # y_[0] has size of n_samples x output_dim (output_dim = 1 for sinewave example)
-        print "y_[0].ndim: ", y_[0].ndim
+        #print "len(y_): ", len(y_)
+        #print "y_[0].shape: ", y_[0].shape # y_[0] has size of n_samples x output_dim (output_dim = 1 for sinewave example)
+        #print "y_[0].ndim: ", y_[0].ndim
 
         # build x_ from y_
         x_ = y_[0]
@@ -514,18 +514,18 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1):
         #c_printed_ = theano.printing.Print('c_ in step')(c_) 
         #x_printed_ = theano.printing.Print('x_ in step')(x_)
 
-        print "x_.ndim: ", x_.ndim
+        #print "x_.ndim: ", x_.ndim
         # embedding and activation
         emb_ = tensor.dot(x_, tparams['Wemb'])
         #emb_ = tensor.dot(x_printed_, tparams['Wemb']) 
-        print "emb_.ndim: ", emb_.ndim
+        #print "emb_.ndim: ", emb_.ndim
 
         #emb_printed_ = theano.printing.Print('emb_ in step')(emb_)
 
         state_below_ = (tensor.dot(emb_, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')])
         #state_below_ = (tensor.dot(emb_printed_, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')])
-        print "state_below_.ndim: ", state_below_.ndim
-        print "tparams[lstm_W].ndim: ", tparams['lstm_W'].ndim
+        #print "state_below_.ndim: ", state_below_.ndim
+        #print "tparams[lstm_W].ndim: ", tparams['lstm_W'].ndim
         #state_below_printed_ = theano.printing.Print('state_below_ in step')(state_below_)
 
          
@@ -534,7 +534,7 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1):
         preact += state_below_ # x_
         #preact += state_below_printed_ # x_
         preact += tparams[_p(prefix, 'b')]
-        print "preact.ndim: ", preact.ndim
+        #print "preact.ndim: ", preact.ndim
 
         i = tensor.nnet.sigmoid(_slice(preact, 0, options['dim_proj']))
         f = tensor.nnet.sigmoid(_slice(preact, 1, options['dim_proj']))
@@ -564,9 +564,9 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1):
         #y = tensor.dot(proj_printed, tparams['U']) + tparams['b']  # tparams['U'] has size of dim_proj x output_dim (128 x 1 for sinewave example)
         #y_printed = theano.printing.Print('y in step')(y) 
         #y = y_printed
-        print "h.ndim: ", h.ndim
-        print "c.ndim: ", c.ndim
-        print "y.ndim: ", y.ndim
+        #print "h.ndim: ", h.ndim
+        #print "c.ndim: ", c.ndim
+        #print "y.ndim: ", y.ndim
         return h, c, y
 
     h0 = tensor.matrix('h', dtype=config.floatX) # 1 x n_samples x dim_proj
@@ -620,7 +620,7 @@ def build_rnn_pred_model(tparams, options, n_timesteps=1, input_dim=1):
 
     prefix=options['encoder']
 
-    print "part1"
+    #print "part1"
 
     def _slice(_x, n, dim):
         if _x.ndim == 3:
@@ -643,11 +643,11 @@ def build_rnn_pred_model(tparams, options, n_timesteps=1, input_dim=1):
         #h_printed_ = theano.printing.Print('h_ in step')(h_)
         #x_printed_ = theano.printing.Print('x_ in step')(x_)
 
-        print "x_.ndim: ", x_.ndim
+        #print "x_.ndim: ", x_.ndim
         # embedding and activation
         emb_ = tensor.dot(x_, tparams['Wemb'])
         #emb_ = tensor.dot(x_printed_, tparams['Wemb']) 
-        print "emb_.ndim: ", emb_.ndim
+        #print "emb_.ndim: ", emb_.ndim
 
         #emb_printed_ = theano.printing.Print('emb_ in step')(emb_)
 
@@ -670,8 +670,8 @@ def build_rnn_pred_model(tparams, options, n_timesteps=1, input_dim=1):
         #y = tensor.dot(proj_printed, tparams['U']) + tparams['b']  # tparams['U'] has size of dim_proj x output_dim (128 x 1 for sinewave example)
         #y_printed = theano.printing.Print('y in step')(y) 
         #y = y_printed
-        print "h.ndim: ", h.ndim
-        print "y.ndim: ", y.ndim
+        #print "h.ndim: ", h.ndim
+        #print "y.ndim: ", y.ndim
         return h, y
 
     h0 = tensor.matrix('h', dtype=config.floatX) # 1 x n_samples x dim_proj
@@ -758,24 +758,24 @@ def train_lstm(
     x, mask, y = prepare_data([train[0][t] for t in [0]], 
                               [train[1][t] for t in [0]], 
                               input_dim, output_dim)
-    print "x.shape: ", x.shape
-    print "y.shape: ", y.shape
+    #print "x.shape: ", x.shape
+    #print "y.shape: ", y.shape
     plt.close('all')
     fig_data = plt.figure()
     input_seq = plt.plot(numpy.linspace(1, x.shape[0], x.shape[0]), x.reshape([x.shape[0], x.shape[2]]), label='u_t, input seq')
     output = plt.plot(numpy.linspace(1, x.shape[0], y.shape[0]), y.reshape([y.shape[0], y.shape[2]]), linestyle='--', label='y_t, output')
     plt.title('sample input seq(u_t) and its output(y_t)')
     plt.legend()
-    plt.savefig('prepare_data_%s_%s_%s_input_dim_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim))
+    plt.savefig('results/prepare_data_%s_%s_%s_input_dim_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim))
 
     ydim = output_dim #numpy.max(train[1]) + 1 # why should y dimension be one larger than existing y values? 
     #print 'ydim %d' % numpy.max(train[1])
     #print train 
     #print valid 
     #print test
-    print len(train[0])
-    print len(valid[0])
-    print len(test[0])
+    #print len(train[0])
+    #print len(valid[0])
+    #print len(test[0])
     #raise NameError('HiThere')
 
     model_options['ydim'] = ydim
@@ -952,9 +952,9 @@ def train_lstm(
     valid_err = pred_error(f_pred, prepare_data, input_dim, output_dim, valid, kf_valid)
     test_err = pred_error(f_pred, prepare_data, input_dim, output_dim, test, kf_test)
 
-    if max_epochs > 0: 
-        print 'Train ', train_err, 'Valid ', valid_err, 'Test ', test_err
+    print 'Train ', train_err, 'Valid ', valid_err, 'Test ', test_err
 
+    if max_epochs > 0: 
         if saveto:
             numpy.savez(saveto, train_err=train_err,
                         valid_err=valid_err, test_err=test_err,
@@ -966,7 +966,7 @@ def train_lstm(
 
 
     ##################################### prediction
-    print "prediction start" 
+    print 'Prediction' 
     use_noise.set_value(0.)
 
     if model_options['encoder']=='lstm':
@@ -1002,7 +1002,7 @@ def train_lstm(
             plt.title('sample test data, test_index =' % test_index[t])
 
             # Save as a file
-            plt.savefig('data_%s_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, test_index[t]))
+            plt.savefig('results/data_%s_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, test_index[t]))
 
  
         x, mask, y = prepare_data(x, y, input_dim, output_dim)
@@ -1024,13 +1024,13 @@ def train_lstm(
             predpred = f_predpred(preds_h[-1], preds_y[-input_dim:])
             #predpred = f_predpred(preds_h[-1], x[50,:,:].reshape([input_dim, 1, 1]))
           
-        print "preds_y.shape: ", preds_y.shape
-        print "len(predpred): ", len(predpred)
-        print "predpred[0].shape", predpred[0].shape
+        #print "preds_y.shape: ", preds_y.shape
+        #print "len(predpred): ", len(predpred)
+        #print "predpred[0].shape", predpred[0].shape
 
         y_pred_total = numpy.concatenate((preds_y, predpred[0]), axis=0)
     
-        print "y_pred_total: ", y_pred_total.shape
+        #print "y_pred_total: ", y_pred_total.shape
 
         for t in xrange(len(test_index)):
             # We just plot one of the sequences
@@ -1038,18 +1038,18 @@ def train_lstm(
             fig_pred = plt.figure()
 
             # Graph 1
-            input_seq, = plt.plot(x[:,t,-1], label='x_t, input seq')
+            #input_seq, = plt.plot(x[:,t,-1], label='x_t, input seq')
             true_targets, = plt.plot(y[:,t], label='y_t, true ouput')
-            ggg, = plt.plot(preds_y_all[:,t,0], linestyle='--', label='y_t_pred, model output')
-            guessed_targets, = plt.plot(y_pred_total[:,t,0], linestyle='--', linewidth=2, label='y_t_predpred, model output')
+            #ggg, = plt.plot(preds_y_all[:,t,0], linestyle='--', label='y_t_pred, model output')
+            guessed_targets, = plt.plot(y_pred_total[:,t,0], linestyle='--', linewidth=2, label='y_t_pred, model output')
             verticalline = plt.axvline(x=49, color='r', linestyle=':')
             plt.grid()
             plt.legend()
             plt.title('true output vs. model output, test_index = ' % test_index[t])
-            plt.ylim((-3, 3))
+            plt.ylim((-1.5, 1.5))
   
             # Save as a file
-            plt.savefig('pred_%s_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, test_index[t]))
+            plt.savefig('results/pred_%s_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, test_index[t]))
 
     
     return train_err, valid_err, test_err
@@ -1057,12 +1057,12 @@ def train_lstm(
 
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
-    input_dim = 1 
+    input_dim = 5
     dim_proj = 10
-    encoder = 'rnn'
-    mode = 'train'
-    #mode = 'test'
-    optimizer=sgd
+    encoder = 'lstm'
+    #mode = 'train'
+    mode = 'test'
+    optimizer=adadelta
     initializer=uniform_weight
     filename="models/model_%s_%s_%s_%d.npz" % (encoder, optimizer.__name__, initializer.__name__, input_dim)
     if mode=='train':

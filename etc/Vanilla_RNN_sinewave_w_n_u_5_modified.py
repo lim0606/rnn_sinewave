@@ -318,16 +318,17 @@ class RNN(object):
 
         while (epoch < self.n_epochs):
             epoch = epoch + 1
-            indices = np.random.randint(0, n_train, size=16) 
-            #for idx in xrange(n_train):
-            for idx in indices:
-                effective_momentum = self.final_momentum \
-                                     if epoch > self.momentum_switchover \
-                                     else self.initial_momentum
-                example_cost = train_model(idx,
-                                           self.learning_rate,
-                                           effective_momentum)
-
+            batchsize = 16
+            for iter in xrange(int(n_train/batchsize)):
+                indices = np.random.randint(0, n_train, size=batchsize) 
+                #for idx in xrange(n_train):
+                for idx in indices:
+                    effective_momentum = self.final_momentum \
+                                         if epoch > self.momentum_switchover \
+                                         else self.initial_momentum
+                    example_cost = train_model(idx,
+                                               self.learning_rate,
+                                               effective_momentum)
             # compute loss on training set
             train_losses = [compute_train_error(i)
                             for i in xrange(n_train)]
@@ -612,7 +613,7 @@ if __name__ == "__main__":
                 L1_reg = 0, L2_reg = 0, 
                 initial_momentum = 0.5, final_momentum = 0.9,
                 momentum_switchover = 5,
-                n_epochs = 400)
+                n_epochs = 100)
 
     model.build_train(seq, targets)
 
