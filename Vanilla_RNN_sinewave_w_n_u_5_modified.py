@@ -742,6 +742,7 @@ if __name__ == "__main__":
     verticalline = plt.axvline(x=49, color='r', linestyle=':')
     plt.grid()
     plt.legend()
+    plt.ylim((-3, 3))
     plt.title('true output vs. model output')
 
     # Save as a file

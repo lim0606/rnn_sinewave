@@ -1,5 +1,5 @@
 '''
-Build a tweet sentiment analyzer
+This code is cutomized to use sinewave generation from lstm.py provided in http://deeplearning.net/tutorial/lstm.html
 '''
 from collections import OrderedDict
 import cPickle as pkl
@@ -681,22 +681,33 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1):
 
     #n_timesteps = 150
     #input_dim = y0.shape[0]
-    #n_samples = y0.shape[1]
-    #output_dim = y0.shape[2]
+    n_samples = y0.shape[1]
+    output_dim = y0.shape[2]
     dim_proj = options['dim_proj']
 
     y_taps = []
     for t in xrange(-input_dim, 0, 1):
         y_taps.append(t)
 
-    rval, updates = theano.scan(_step,
-                                #sequences=[mask, state_below],
-                                outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved 
-                                              dict(initial=c0, taps=[-1]), # h0.ndim = 2 will be preserved
-                                              dict(initial=y0, taps=y_taps)], # y0.ndim = 3 will become y_[0].ndim = 2 
-                                                                              # usage of taps is tricky!! fuck!!
-                                name=_p(prefix, '_layers'),
-                                n_steps=n_timesteps)
+    if input_dim == 1: 
+        rval, updates = theano.scan(_step,
+                                    #sequences=[mask, state_below],
+                                    outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved
+                                                  dict(initial=c0, taps=[-1]), # h0.ndim = 2 will be preserved
+                                                  dict(initial=y0.reshape([n_samples, output_dim]), taps=y_taps)], # y0.ndim = 3 will become y_[0].ndim = 2
+                                                                                  # usage of taps is tricky!! fuck!!
+                                    name=_p(prefix, '_layers'),
+                                    n_steps=n_timesteps)
+
+    else: 
+        rval, updates = theano.scan(_step,
+                                    #sequences=[mask, state_below],
+                                    outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved 
+                                                  dict(initial=c0, taps=[-1]), # h0.ndim = 2 will be preserved
+                                                  dict(initial=y0, taps=y_taps)], # y0.ndim = 3 will become y_[0].ndim = 2 
+                                                                                  # usage of taps is tricky!! fuck!!
+                                    name=_p(prefix, '_layers'),
+                                    n_steps=n_timesteps)
 
     f_predpred = theano.function(inputs=[h0, c0, y0], 
                              outputs=[rval[2]], 
@@ -773,21 +784,32 @@ def build_rnn_pred_model(tparams, options, n_timesteps=1, input_dim=1):
 
     #n_timesteps = 150
     #input_dim = y0.shape[0]
-    #n_samples = y0.shape[1]
-    #output_dim = y0.shape[2]
+    n_samples = y0.shape[1]
+    output_dim = y0.shape[2]
     dim_proj = options['dim_proj']
 
     y_taps = []
     for t in xrange(-input_dim, 0, 1):
         y_taps.append(t)
 
-    rval, updates = theano.scan(_step,
-                                #sequences=[mask, state_below],
-                                outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved 
-                                              dict(initial=y0, taps=y_taps)], # y0.ndim = 3 will become y_[0].ndim = 2 
-                                                                              # usage of taps is tricky!! fuck!!
-                                name=_p(prefix, '_layers'),
-                                n_steps=n_timesteps)
+
+    if input_dim == 1:
+        rval, updates = theano.scan(_step,
+                                    #sequences=[mask, state_below],
+                                    outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved
+                                                  dict(initial=y0.reshape([n_samples, output_dim]), taps=y_taps)], # y0.ndim = 3 will become y_[0].ndim = 2
+                                                                                  # usage of taps is tricky!! fuck!!
+                                    name=_p(prefix, '_layers'),
+                                    n_steps=n_timesteps)
+
+    else:
+        rval, updates = theano.scan(_step,
+                                    #sequences=[mask, state_below],
+                                    outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved
+                                                  dict(initial=y0, taps=y_taps)], # y0.ndim = 3 will become y_[0].ndim = 2
+                                                                                  # usage of taps is tricky!! fuck!!
+                                    name=_p(prefix, '_layers'),
+                                    n_steps=n_timesteps)
 
     f_predpred = theano.function(inputs=[h0, y0], 
                              outputs=[rval[1]], 
@@ -1052,38 +1074,39 @@ def train_lstm(
     use_noise.set_value(0.)
 
     if model_options['encoder']=='lstm':
-        f_predpred = build_lstm_pred_model(tparams, model_options, n_timesteps=105, input_dim=input_dim)
+        f_predpred = build_lstm_pred_model(tparams, model_options, n_timesteps=500, input_dim=input_dim)
     elif model_options['encoder']=='rnn':
-        f_predpred = build_rnn_pred_model(tparams, model_options, n_timesteps=105, input_dim=input_dim)
+        f_predpred = build_rnn_pred_model(tparams, model_options, n_timesteps=500, input_dim=input_dim)
  
-#    kf = get_minibatches_idx(len(test[0]), batch_size, shuffle=True)
-    kf = get_minibatches_idx(1, batch_size, shuffle=True)
+    #kf = get_minibatches_idx(len(test[0]), batch_size, shuffle=True)
+    kf = get_minibatches_idx(len(test[0]), 5, shuffle=True)
     #print "batchsize = %d" % batch_size
     #print "len(kf) = %d" % len(kf)
-    #print kf
+    #print [kf[0]]
     #raise NameError('HiThere')
-    for _, test_index in kf:
+    for _, test_index in [kf[0]]:
 
         # Select the random examples for this minibatch
-#        y = [test[1][t] for t in test_index] # batchsize number of seqs
-#        x = [test[0][t] for t in test_index] # 
-        y = [test[1][0]] # single seq
-        x = [test[0][0]] # single seq
+        y = [test[1][t] for t in test_index] # batchsize number of seqs
+        x = [test[0][t] for t in test_index] # 
+#        y = [test[1][0]] # single seq
+#        x = [test[0][0]] # single seq
         x_true = x
 
-        # We just plot one of the sequences
-        plt.close('all')
-        fig_pred = plt.figure()
+        for t in xrange(len(test_index)):
+            # We just plot one of the sequences
+            plt.close('all')
+            fig_pred = plt.figure()
 
-        # Graph 1
-        input_seq, = plt.plot(x[0], label='x_t, input seq')
-        true_targets, = plt.plot(y[0], label='y_t, true ouput')
-        plt.grid()
-        plt.legend()
-        plt.title('sample test data')
+            # Graph 1
+            input_seq, = plt.plot(x[t], label='x_t, input seq')
+            true_targets, = plt.plot(y[t], label='y_t, true ouput')
+            plt.grid()
+            plt.legend()
+            plt.title('sample test data, test_index =' % test_index[t])
 
-        # Save as a file
-        plt.savefig('data_%s_%s_input_dim_5.png' % (model_options['encoder'], optimizer.__name__))
+            # Save as a file
+            plt.savefig('data_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, input_dim, test_index[t]))
 
  
         x, mask, y = prepare_data(x, y, input_dim, output_dim)
@@ -1091,14 +1114,6 @@ def train_lstm(
         maskmask = mask[:50, :]
         yy = y[:50, :]
   
-        print "xx.shape: ", xx.shape
-        print "yy.shape: ", yy.shape
-
-        print "x_true[0][0:5]: "
-        print x_true[0][0:5]
-        print "xx[0, 0, :]: "
-        print xx[0,0,:]
-
         preds_y_all = f_pred(x, mask) # for debugging
         
         preds_y = f_pred(xx, maskmask)
@@ -1113,34 +1128,32 @@ def train_lstm(
             predpred = f_predpred(preds_h[-1], preds_y[-input_dim:])
             #predpred = f_predpred(preds_h[-1], x[50,:,:].reshape([input_dim, 1, 1]))
           
-    print "preds_y.shape: ", preds_y.shape
-    print "len(predpred): ", len(predpred)
-    print "predpred[0].shape", predpred[0].shape
+        print "preds_y.shape: ", preds_y.shape
+        print "len(predpred): ", len(predpred)
+        print "predpred[0].shape", predpred[0].shape
 
-    y_pred_total = numpy.concatenate((preds_y, predpred[0]), axis=0)
+        y_pred_total = numpy.concatenate((preds_y, predpred[0]), axis=0)
     
-    print "y_pred_total: ", y_pred_total.shape
+        print "y_pred_total: ", y_pred_total.shape
 
-    
-    # We just plot one of the sequences
-    plt.close('all')
-    fig_pred = plt.figure()
+        for t in xrange(len(test_index)):
+            # We just plot one of the sequences
+            plt.close('all')
+            fig_pred = plt.figure()
 
-    # Graph 1
-#    asdf, = plt.plot(y_asdf[:,0], label='y_asdf, asdf')
-#    asdf_targets, = plt.plot(preds_y_asdf[:,0,0], linestyle='--', label='y_pred_asdf')
-    input_seq, = plt.plot(x[:,0,-1], label='x_t, input seq')
-    true_targets, = plt.plot(y[:,0], label='y_t, true ouput')
-    ggg, = plt.plot(preds_y_all[:,0,0], linestyle='--', label='y_t_pred, model output')
-    guessed_targets, = plt.plot(y_pred_total[:,0,0], linestyle='--', linewidth=2, label='y_t_predpred, model output')
-    verticalline = plt.axvline(x=49, color='r', linestyle=':')
-    plt.grid()
-    plt.legend()
-    plt.title('true output vs. model output')
-    plt.ylim((-3, 3))
+            # Graph 1
+            input_seq, = plt.plot(x[:,t,-1], label='x_t, input seq')
+            true_targets, = plt.plot(y[:,t], label='y_t, true ouput')
+            ggg, = plt.plot(preds_y_all[:,t,0], linestyle='--', label='y_t_pred, model output')
+            guessed_targets, = plt.plot(y_pred_total[:,t,0], linestyle='--', linewidth=2, label='y_t_predpred, model output')
+            verticalline = plt.axvline(x=49, color='r', linestyle=':')
+            plt.grid()
+            plt.legend()
+            plt.title('true output vs. model output, test_index = ' % test_index[t])
+            plt.ylim((-3, 3))
   
-    # Save as a file
-    plt.savefig('pred_%s_%s_input_dim_5.png' % (model_options['encoder'], optimizer.__name__))
+            # Save as a file
+            plt.savefig('pred_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, input_dim, test_index[t]))
 
     
     return train_err, valid_err, test_err
@@ -1148,12 +1161,12 @@ def train_lstm(
 
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
-    input_dim = 5
+    input_dim = 1
     dim_proj = 10
-    encoder = 'rnn'
+    encoder = 'lstm'
     #mode = 'train'
     mode = 'test'
-    optimizer=sgd
+    optimizer=adadelta
 
     if mode=='train':
         train_lstm(
