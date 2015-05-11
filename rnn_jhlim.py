@@ -999,7 +999,7 @@ def train_lstm(
             true_targets, = plt.plot(y[t], label='y_t, true ouput')
             plt.grid()
             plt.legend()
-            plt.title('sample test data, test_index =' % test_index[t])
+            plt.title('sample test data, test_index=%d' % test_index[t])
 
             # Save as a file
             plt.savefig('results/data_%s_%s_%s_input_dim_%d_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, test_index[t]))
@@ -1045,7 +1045,7 @@ def train_lstm(
             verticalline = plt.axvline(x=49, color='r', linestyle=':')
             plt.grid()
             plt.legend()
-            plt.title('true output vs. model output, test_index = ' % test_index[t])
+            plt.title('true output vs. model output, test_index=%d' % test_index[t])
             plt.ylim((-1.5, 1.5))
   
             # Save as a file
