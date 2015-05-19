@@ -604,8 +604,8 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1):
                                     n_steps=n_timesteps)
 
     f_predpred = theano.function(inputs=[h0, c0, y0], 
-                             outputs=rval[2], 
-                             name='f_predpred')
+                             outputs=[rval[2]], 
+                             name='f_pred')
     # rval[0] = h, rval[1] = c, rval[2] = y. 
     # prediction requires y.
 
@@ -707,8 +707,8 @@ def build_rnn_pred_model(tparams, options, n_timesteps=1, input_dim=1):
                                     n_steps=n_timesteps)
 
     f_predpred = theano.function(inputs=[h0, y0], 
-                             outputs=rval[1], 
-                             name='f_predpred')
+                             outputs=[rval[1]], 
+                             name='f_pred')
     # rval[0] = h, rval[1] = y. 
     # prediction requires y.
 
@@ -981,17 +981,13 @@ def train_lstm(
     elif model_options['encoder']=='rnn':
         f_predpred = build_rnn_pred_model(tparams, model_options, n_timesteps=pred_steps, input_dim=input_dim)
  
-    kf = get_minibatches_idx(len(test[0]), batch_size, shuffle=True)
-    #kf = get_minibatches_idx(len(test[0]), 5, shuffle=True)
+    #kf = get_minibatches_idx(len(test[0]), batch_size, shuffle=True)
+    kf = get_minibatches_idx(len(test[0]), 5, shuffle=True)
     #print "batchsize = %d" % batch_size
     #print "len(kf) = %d" % len(kf)
     #print [kf[0]]
     #raise NameError('HiThere')
-
-    pred_err = numpy.zeros(pred_steps,).astype(config.floatX)
-
-    for epoch_pred, (_, test_index) in enumerate(kf):
-    #for _, test_index in [kf[0]]:
+    for _, test_index in [kf[0]]:
 
         # Select the random examples for this minibatch
         y = [test[1][t] for t in test_index] # batchsize number of seqs
@@ -999,22 +995,21 @@ def train_lstm(
 #        y = [test[1][0]] # single seq
 #        x = [test[0][0]] # single seq
         x_true = x
-        
-        if epoch_pred is 0:
-            for t in xrange(len(test_index)):
-                # We just plot one of the sequences
-                plt.close('all')
-                fig_pred = plt.figure()
 
-                # Graph 1
-                input_seq, = plt.plot(x[t], label='x_t, input seq')
-                true_targets, = plt.plot(y[t], label='y_t, true ouput')
-                plt.grid()
-                plt.legend()
-                plt.title('sample test data, test_index=%d' % test_index[t])
+        for t in xrange(len(test_index)):
+            # We just plot one of the sequences
+            plt.close('all')
+            fig_pred = plt.figure()
 
-                # Save as a file
-                plt.savefig('results/0data_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std, test_index[t]))
+            # Graph 1
+            input_seq, = plt.plot(x[t], label='x_t, input seq')
+            true_targets, = plt.plot(y[t], label='y_t, true ouput')
+            plt.grid()
+            plt.legend()
+            plt.title('sample test data, test_index=%d' % test_index[t])
+
+            # Save as a file
+            plt.savefig('results/data_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std, test_index[t]))
 
  
         x, mask, y = prepare_data(x, y, input_dim, output_dim)
@@ -1025,91 +1020,61 @@ def train_lstm(
         preds_y_all = f_pred(x, mask) # for debugging
         
         preds_y = f_pred(xx, maskmask)
-        #print preds_y.shape
-        #print preds_y[-input_dim:].shape
-        #print x.shape
-        #print x[50,:,:].shape
-
         if model_options['encoder']=='lstm':
             preds_h = f_hiddens[0](xx, mask)
             preds_c = f_hiddens[1](xx, maskmask)
 
-            #predpred = f_predpred(preds_h[-1], preds_c[-1], preds_y[-input_dim:])
-            predpred = f_predpred(preds_h[-1], preds_c[-1], x[50,:,:].transpose().reshape([input_dim, x.shape[1], 1]))
-
+            predpred = f_predpred(preds_h[-1], preds_c[-1], preds_y[-input_dim:])
+            #predpred = f_predpred(preds_h[-1], preds_c[-1], x[50,:,:].reshape([input_dim, 1, 1]))
         elif model_options['encoder']=='rnn':
             preds_h = f_hiddens[0](xx, mask)
-
-            #predpred = f_predpred(preds_h[-1], preds_y[-input_dim:])
-            predpred = f_predpred(preds_h[-1], x[50,:,:].transpose().reshape([input_dim, x.shape[1], 1]))
+            predpred = f_predpred(preds_h[-1], preds_y[-input_dim:])
+            #predpred = f_predpred(preds_h[-1], x[50,:,:].reshape([input_dim, 1, 1]))
           
         #print "preds_y.shape: ", preds_y.shape
-        #print "predpred.shape", predpred.shape
+        #print "len(predpred): ", len(predpred)
+        #print "predpred[0].shape", predpred[0].shape
 
-        y_pred_total = numpy.concatenate((preds_y, predpred), axis=0)
-         
-        #print "y_pred_total.shape: ", y_pred_total.shape
-        #print "y.shape: ", y.shape
-        #print "predpred.shape: ", predpred.shape
+        y_pred_total = numpy.concatenate((preds_y, predpred[0]), axis=0)
+    
+        #print "y_pred_total: ", y_pred_total.shape
 
-        # estimate error
-        pred_err = pred_err + ((predpred - y[50:,:,:]) ** 2).mean(axis=1, keepdims=True).reshape(pred_steps,)
-        #print "pred_err.shape: ", pred_err.shape
+        for t in xrange(len(test_index)):
+            # We just plot one of the sequences
+            plt.close('all')
+            fig_pred = plt.figure()
 
-
-        if epoch_pred is 0:
-            for t in xrange(len(test_index)):
-                # We just plot one of the sequences
-                plt.close('all')
-                fig_pred = plt.figure()
-
-                # Graph 1
-                #input_seq, = plt.plot(x[:,t,-1], label='x_t, input seq')
-                true_targets, = plt.plot(y[:,t], label='y_t, true ouput')
-                #ggg, = plt.plot(preds_y_all[:,t,0], linestyle='--', label='y_t_pred, model output')
-                guessed_targets, = plt.plot(y_pred_total[:,t,0], linestyle='--', linewidth=2, label='y_t_pred, model output')
-                verticalline = plt.axvline(x=49, color='r', linestyle=':')
-                plt.grid()
-                plt.legend()
-                plt.title('true output vs. model output, test_index=%d' % test_index[t])
-                plt.ylim((-1.5, 1.5))
+            # Graph 1
+            #input_seq, = plt.plot(x[:,t,-1], label='x_t, input seq')
+            true_targets, = plt.plot(y[:,t], label='y_t, true ouput')
+            #ggg, = plt.plot(preds_y_all[:,t,0], linestyle='--', label='y_t_pred, model output')
+            guessed_targets, = plt.plot(y_pred_total[:,t,0], linestyle='--', linewidth=2, label='y_t_pred, model output')
+            verticalline = plt.axvline(x=49, color='r', linestyle=':')
+            plt.grid()
+            plt.legend()
+            plt.title('true output vs. model output, test_index=%d' % test_index[t])
+            plt.ylim((-1.5, 1.5))
   
-                # Save as a file
-                plt.savefig('results/0pred_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std, test_index[t]))
+            # Save as a file
+            plt.savefig('results/pred_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std, test_index[t]))
 
-    # predpred err!!!
-    pred_err = pred_err / len(kf)   
-    print pred_err
-
-    # plot predpred err
-    plt.close('all')
-    fig_pred = plt.figure()
-
-    # Graph 1
-    plot_pred_err, = plt.plot(pred_err, '--bo', label='pred_err, squared err')
-    plt.grid()
-    plt.legend()
-    plt.title('prediction error')
-
-    # Save as a file
-    plt.savefig('results/0pred_err_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std))
-
-    return train_err, valid_err, test_err, pred_err
+    
+    return train_err, valid_err, test_err
 
 
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
     input_dim = 5
     dim_proj = 100
-    pred_steps = 160-1-input_dim+1-50
+    pred_steps = 110
     noise_std = 0.001
     encoder = 'lstm'
-    #mode = 'train'
+    mode = 'train'
     #mode = 'resume'
-    mode = 'test'
+    #mode = 'test'
     max_epochs=800
-    optimizer=adadelta
-    initializer=ortho_weight
+    optimizer=sgd
+    initializer=uniform_weight
     filename="models/model_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.npz" % (encoder, optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std)
     if mode=='train':
         reload_model=""
