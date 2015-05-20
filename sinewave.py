@@ -76,7 +76,7 @@ def prepare_data(seqs, labels, input_dim, stride=1, output_dim=None, maxlen=None
     #    where n_timestamp = maxlen - input_dim + 1
 
 
-def load_data(valid_portion=0.1, maxlen=None, sort_by_len=False):
+def load_data(path="sinewave.pkl", valid_portion=0.1, maxlen=None, sort_by_len=False):
 
     '''Loads the dataset
 
@@ -96,87 +96,110 @@ def load_data(valid_portion=0.1, maxlen=None, sort_by_len=False):
     #############
     # LOAD DATA #
     #############
-    
-    print 'Generate sine wave dataset'
-    n_sinewave = 1000 #20000
-    n_train = n_sinewave # number of sine wave sequences (train)
-    n_test = n_sinewave # number of sine wave sequences (test)
-    length_sinewave = 160 # length of each sine wave sequence
 
-    seq_sine_alpha_train = numpy.random.uniform(1, 5, (n_train, 1))
-    seq_sine_alpha_test = numpy.random.uniform(1, 5, (n_test, 1))
-    seq_sine_beta_train = numpy.random.uniform(-1, 1, (n_train, 1))
-    seq_sine_beta_test = numpy.random.uniform(-1, 1, (n_test, 1))
+    gen_data = False
 
-    #print seq_sine_alpha_train.shape
-    #print seq_sine_beta_train.shape
+    # Load the dataset
+    try:
+        f = open(path, 'rb')
+    except:
+        gen_data = True
+        f = open(path, 'wb')
 
-    '''sinewave_base = numpy.linspace(0, 2 * math.pi, length_sinewave)
-    sinewave_x = sinewave_base[:-1:]
-    sinewave_xp1 = sinewave_base[1::]
-    #print "len(sinewave_x) = %d, len(sinewave_xp1) = %d" %(len(sinewave_x), len(sinewave_xp1))
-    '''
-    sinewave_x = numpy.linspace(0, 2 * math.pi, length_sinewave)
+    if gen_data is True:
+        #############
+        # GEN DATA  #
+        #############    
+        print 'Generate sine wave dataset'
+        n_sinewave = 1000 #20000
+        n_train = n_sinewave # number of sine wave sequences (train)
+        n_test = n_sinewave # number of sine wave sequences (test)
+        length_sinewave = 160 # length of each sine wave sequence
 
-    train_set_x = []
-    train_set_y = []
-    test_set_x = []
-    test_set_y = []
+        seq_sine_alpha_train = numpy.random.uniform(1, 5, (n_train, 1))
+        seq_sine_alpha_test = numpy.random.uniform(1, 5, (n_test, 1))
+        seq_sine_beta_train = numpy.random.uniform(-1, 1, (n_train, 1))
+        seq_sine_beta_test = numpy.random.uniform(-1, 1, (n_test, 1))
 
-    for i in range(n_train):
-        train_set_x.append(numpy.sin(seq_sine_alpha_train[i] * sinewave_x + seq_sine_beta_train[i] * 2 * math.pi).tolist())
-        #train_set_y.append(numpy.sin(seq_sine_alpha_train[i] * sinewave_xp1 + seq_sine_beta_train[i] * 2 * math.pi).tolist())
-        train_set_y.append( ( -1 * numpy.ones(length_sinewave) ).tolist() )
+        #print seq_sine_alpha_train.shape
+        #print seq_sine_beta_train.shape
 
-    train_set = (train_set_x, train_set_y)
-    #print "train_set: " 
-    #print train_set
-    del train_set_x, train_set_y
+        '''sinewave_base = numpy.linspace(0, 2 * math.pi, length_sinewave)
+        sinewave_x = sinewave_base[:-1:]
+        sinewave_xp1 = sinewave_base[1::]
+        #print "len(sinewave_x) = %d, len(sinewave_xp1) = %d" %(len(sinewave_x), len(sinewave_xp1))
+        '''
+        sinewave_x = numpy.linspace(0, 2 * math.pi, length_sinewave)
 
-    for i in range(n_test):
-        test_set_x.append(numpy.sin(seq_sine_alpha_test[i] * sinewave_x + seq_sine_beta_test[i] * 2 * math.pi).tolist())
-        #test_set_y.append(numpy.sin(seq_sine_alpha_test[i] * sinewave_xp1 + seq_sine_beta_test[i] * 2 * math.pi).tolist())
-        test_set_y.append( ( -1 * numpy.ones(length_sinewave) ).tolist() )
+        train_set_x = []
+        train_set_y = []
+        test_set_x = []
+        test_set_y = []
 
-    test_set = (test_set_x, test_set_y)    
-    del test_set_x, test_set_y
+        for i in range(n_train):
+            train_set_x.append(numpy.sin(seq_sine_alpha_train[i] * sinewave_x + seq_sine_beta_train[i] * 2 * math.pi).tolist())
+            #train_set_y.append(numpy.sin(seq_sine_alpha_train[i] * sinewave_xp1 + seq_sine_beta_train[i] * 2 * math.pi).tolist())
+            train_set_y.append( ( -1 * numpy.ones(length_sinewave) ).tolist() )
 
-    #print train_set == test_set
-    #print train_set[0] == test_set[0]
-    #print train_set[0] # a list with length 25000
-    #print train_set[0][0] # a list with sentence's length (can vary)
-    #print test_set[0][0]
-    #print f
-    #print "len(train_set) = %d" % len(train_set)
-    #print "len(train_set[0]) = %d, len(train_set[1]) = %d" % (len(train_set[0]), len(train_set[1]))
-    #print "len(train_set[0][0]) = %d, len(train_set[1][0]) = %d" % (len(train_set[0][0]), len(train_set[1][0])) 
-    #print maxlen 
-    if maxlen:
-        new_train_set_x = []
-        new_train_set_y = []
-        for x, y in zip(train_set[0], train_set[1]):
-            if len(x) <= maxlen:
-                new_train_set_x.append(x)
-                new_train_set_y.append(y)
-        train_set = (new_train_set_x, new_train_set_y)
+        train_set = (train_set_x, train_set_y)
+        #print "train_set: " 
+        #print train_set
+        del train_set_x, train_set_y
+
+        for i in range(n_test):
+            test_set_x.append(numpy.sin(seq_sine_alpha_test[i] * sinewave_x + seq_sine_beta_test[i] * 2 * math.pi).tolist())
+            #test_set_y.append(numpy.sin(seq_sine_alpha_test[i] * sinewave_xp1 + seq_sine_beta_test[i] * 2 * math.pi).tolist())
+            test_set_y.append( ( -1 * numpy.ones(length_sinewave) ).tolist() )
+
+        test_set = (test_set_x, test_set_y)    
+        del test_set_x, test_set_y
+
+        #print train_set == test_set
+        #print train_set[0] == test_set[0]
+        #print train_set[0] # a list with length 25000
+        #print train_set[0][0] # a list with sentence's length (can vary)
+        #print test_set[0][0]
+        #print f
+        #print "len(train_set) = %d" % len(train_set)
+        #print "len(train_set[0]) = %d, len(train_set[1]) = %d" % (len(train_set[0]), len(train_set[1]))
+        #print "len(train_set[0][0]) = %d, len(train_set[1][0]) = %d" % (len(train_set[0][0]), len(train_set[1][0])) 
+        #print maxlen 
+        if maxlen:
+            new_train_set_x = []
+            new_train_set_y = []
+            for x, y in zip(train_set[0], train_set[1]):
+                if len(x) <= maxlen:
+                    new_train_set_x.append(x)
+                    new_train_set_y.append(y)
+            train_set = (new_train_set_x, new_train_set_y)
+            #print "train_set: "
+            #print train_set
+            del new_train_set_x, new_train_set_y
+
+        # split training set into validation set
+        train_set_x, train_set_y = train_set
         #print "train_set: "
         #print train_set
-        del new_train_set_x, new_train_set_y
+        n_samples = len(train_set_x)
+        sidx = numpy.random.permutation(n_samples)
+        n_train = int(numpy.round(n_samples * (1. - valid_portion)))
+        valid_set_x = [train_set_x[s] for s in sidx[n_train:]]
+        valid_set_y = [train_set_y[s] for s in sidx[n_train:]]
+        train_set_x = [train_set_x[s] for s in sidx[:n_train]]
+        train_set_y = [train_set_y[s] for s in sidx[:n_train]]
 
-    # split training set into validation set
-    train_set_x, train_set_y = train_set
-    #print "train_set: "
-    #print train_set
-    n_samples = len(train_set_x)
-    sidx = numpy.random.permutation(n_samples)
-    n_train = int(numpy.round(n_samples * (1. - valid_portion)))
-    valid_set_x = [train_set_x[s] for s in sidx[n_train:]]
-    valid_set_y = [train_set_y[s] for s in sidx[n_train:]]
-    train_set_x = [train_set_x[s] for s in sidx[:n_train]]
-    train_set_y = [train_set_y[s] for s in sidx[:n_train]]
+        train_set = (train_set_x, train_set_y)
+        valid_set = (valid_set_x, valid_set_y)
 
-    train_set = (train_set_x, train_set_y)
-    valid_set = (valid_set_x, valid_set_y)
+
+        cPickle.dump(train_set, f, -1)
+        cPickle.dump(valid_set, f, -1)
+        cPickle.dump(test_set, f, -1)   
+    else:
+        train_set = cPickle.load(f) # tuple with lenth 2
+        valid_set = cPickle.load(f) 
+        test_set = cPickle.load(f)
+ 
     '''
     plt.close('all')
     fig = plt.figure()

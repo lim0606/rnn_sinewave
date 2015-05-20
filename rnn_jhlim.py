@@ -653,8 +653,7 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1, output_d
     output_dimd = y0.shape[2]
     dim_proj = options['dim_proj']
 
-    if output_dim > 1 and input_dim > 1:
-        print "boolean"
+    if output_dim == input_dim: #if output_dim > 1 and input_dim > 1:
         rval, updates = theano.scan(_stepstep,
                                     #sequences=[mask, state_below],
                                     outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved
@@ -831,6 +830,7 @@ def train_lstm(
                        # This frequently need a bigger model.
     reload_model="",  # Path to a saved model we want to start from.
     test_size=-1,  # If >0, we keep only this number of test example.
+    is_plot_save=True
 ):
 
     # Model options
@@ -854,13 +854,15 @@ def train_lstm(
     #print "y.shape: ", y.shape
     x_plot = x[:,0,:].reshape(x.shape[0],x.shape[2])
     y_plot = y[:,0,:].reshape(y.shape[0],y.shape[2])
-    plt.close('all')
-    fig_data = plt.figure()
-    input_seq = plt.plot(numpy.linspace(1, x_plot.shape[0], x_plot.shape[0]), x_plot, linewidth=2, label='u_t, input seq')
-    output = plt.plot(numpy.linspace(1, y_plot.shape[0], y_plot.shape[0]), y_plot, linestyle='--', label='y_t, output')
-    plt.title('sample input seq(u_t) and its output(y_t)')
-    plt.legend()
-    plt.savefig('results/0prepare_data_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std))
+
+    if is_plot_save is True:  
+        plt.close('all')
+        fig_data = plt.figure()
+        input_seq = plt.plot(numpy.linspace(1, x_plot.shape[0], x_plot.shape[0]), x_plot, linewidth=2, label='u_t, input seq')
+        output = plt.plot(numpy.linspace(1, y_plot.shape[0], y_plot.shape[0]), y_plot, linestyle='--', label='y_t, output')
+        plt.title('sample input seq(u_t) and its output(y_t)')
+        plt.legend()
+        plt.savefig('results/0prepare_data_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std))
 
     ydim = output_dim #numpy.max(train[1]) + 1 # why should y dimension be one larger than existing y values? 
     #print 'ydim %d' % numpy.max(train[1])
@@ -1082,6 +1084,7 @@ def train_lstm(
     #raise NameError('HiThere')
 
     pred_err = numpy.zeros(pred_steps,).astype(config.floatX)
+    pred_err_per_frame = numpy.zeros(pred_steps * output_dim,).astype(config.floatX)
 
     for epoch_pred, (_, test_index) in enumerate(kf):
     #for _, test_index in [kf[0]]:
@@ -1096,18 +1099,19 @@ def train_lstm(
         if epoch_pred is 0:
             for t in xrange(len(test_index)):
                 # We just plot one of the sequences
-                plt.close('all')
-                fig_pred = plt.figure()
+                if is_plot_save is True: 
+                    plt.close('all')
+                    fig_pred = plt.figure()
 
-                # Graph 1
-                input_seq, = plt.plot(x[t], label='x_t, input seq')
-                true_targets, = plt.plot(y[t], label='y_t, true ouput')
-                plt.grid()
-                plt.legend()
-                plt.title('sample test data, test_index=%d' % test_index[t])
+                    # Graph 1
+                    input_seq, = plt.plot(x[t], label='x_t, input seq')
+                    true_targets, = plt.plot(y[t], label='y_t, true ouput')
+                    plt.grid()
+                    plt.legend()
+                    plt.title('sample test data, test_index=%d' % test_index[t])
 
-                # Save as a file
-                plt.savefig('results/0data_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std, test_index[t]))
+                    # Save as a file
+                    plt.savefig('results/0data_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std, test_index[t]))
 
  
         x, mask, y = prepare_data(x, y, input_dim=input_dim, output_dim=output_dim, stride=stride)
@@ -1156,8 +1160,22 @@ def train_lstm(
         pred_err = pred_err + ((predpred - y[(50-input_dim)/stride+1:,:,:]) ** 2).mean(axis=1, keepdims=True).mean(axis=2, keepdims=True).reshape(pred_steps,)
         #print "pred_err.shape: ", pred_err.shape
 
+        # estimate error per frame
+        for t in xrange(len(test_index)):
+            yyy = y[(50-input_dim)/stride+1,t,:].reshape(input_dim,1)
+            yyy_pred_total = y_pred_total[(50-input_dim)/stride+1,t,:].reshape(input_dim,1)
+            for i in xrange((50-input_dim)/stride+1+1, y.shape[0]):
+                yyy = numpy.concatenate((yyy, y[i,t,:].reshape(input_dim,1)), axis=0)
+                yyy_pred_total = numpy.concatenate((yyy_pred_total, y_pred_total[i,t,:].reshape(input_dim,1)), axis=0)
 
-        if epoch_pred is 0:
+            #print yyy.shape
+            #print yyy_pred_total.shape
+            #raise NameError('HiHiThere')
+            pred_err_per_frame = pred_err_per_frame + (((yyy - yyy_pred_total) ** 2) / float(len(test_index))).reshape(pred_steps * output_dim,)
+        #print "pred_err_per_frame.shape: ", pred_err_per_frame.shape
+
+
+        if (epoch_pred is 0) and (is_plot_save is True):
             for t in xrange(len(test_index)):
                 # We just plot one of the sequences
                 plt.close('all')
@@ -1173,14 +1191,14 @@ def train_lstm(
                 for i in xrange(1, y.shape[0]):
                     yyy = numpy.concatenate((yyy, y[i,t,:].reshape(input_dim,1)), axis=0)
                     yyy_pred_total = numpy.concatenate((yyy_pred_total, y_pred_total[i,t,:].reshape(input_dim,1)), axis=0)
-                print "yyy.shape: ", yyy.shape
-                print "yyy_pred_total.shape: ", yyy_pred_total.shape
+                #print "yyy.shape: ", yyy.shape
+                #print "yyy_pred_total.shape: ", yyy_pred_total.shape
                 #input_seq, = plt.plot(x[:,t,-1], label='x_t, input seq')
                 true_targets, = plt.plot(yyy, label='y_t, true ouput') #true_targets, = plt.plot(y[:,t], label='y_t, true ouput')
                 #ggg, = plt.plot(preds_y_all[:,t,0], linestyle='--', label='y_t_pred, model output')
                 #guessed_targets, = plt.plot(y_pred_total[:,t,0], linestyle='--', linewidth=2, label='y_t_pred, model output')
                 guessed_targets, = plt.plot(yyy_pred_total, linestyle='--', linewidth=2, label='y_t_pred, model output')
-                verticalline = plt.axvline(x=(50-input_dim)/stride, color='r', linestyle=':')
+                verticalline = plt.axvline(x=50, color='r', linestyle=':')
                 plt.grid()
                 plt.legend()
                 plt.title('true output vs. model output, test_index=%d' % test_index[t])
@@ -1190,23 +1208,27 @@ def train_lstm(
                 plt.savefig('results/0pred_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std, test_index[t]))
 
     # predpred err!!!
-    pred_err = pred_err / len(kf)   
+    pred_err = pred_err / float(len(kf))
     print pred_err
 
+    pred_err_per_frame = pred_err_per_frame / float(len(kf))
+    print pred_err_per_frame
+
     # plot predpred err
-    plt.close('all')
-    fig_pred = plt.figure()
+    if is_plot_save is True:
+        plt.close('all')
+        fig_pred = plt.figure()
 
-    # Graph 1
-    plot_pred_err, = plt.plot(pred_err, '--bo', label='pred_err, squared err')
-    plt.grid()
-    plt.legend()
-    plt.title('prediction error')
+        # Graph 1
+        plot_pred_err, = plt.plot(pred_err, '--bo', label='pred_err, squared err')
+        plt.grid()
+        plt.legend()
+        plt.title('prediction error')
 
-    # Save as a file
-    plt.savefig('results/0pred_err_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std))
+        # Save as a file
+        plt.savefig('results/0pred_err_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std))
 
-    return train_err, valid_err, test_err, pred_err
+    return train_err, valid_err, test_err, pred_err, pred_err_per_frame
 
 
 if __name__ == '__main__':
@@ -1214,16 +1236,17 @@ if __name__ == '__main__':
     input_dim=5
     output_dim=input_dim # 1
     stride=input_dim # 1
-    dim_proj = 100
+    dim_proj = 10
     pred_steps = ((160-(input_dim+output_dim))/stride+1) - ((50-input_dim)/stride+1)
-    noise_std = 0.001
+    noise_std = 0.#0.001
     encoder = 'lstm'
-    #mode = 'train'
+    mode = 'train'
     #mode = 'resume'
-    mode = 'test'
+    #mode = 'test'
     max_epochs=800
     optimizer=adadelta
     initializer=ortho_weight
+    is_plot_save=False
     filename="models/0model_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.npz" % (encoder, optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std)
     if mode=='train':
         reload_model=""
@@ -1250,5 +1273,6 @@ if __name__ == '__main__':
             use_dropout=False,
             encoder=encoder,
             initializer=initializer,
-            optimizer=optimizer
+            optimizer=optimizer,
+            is_plot_save=is_plot_save
     )

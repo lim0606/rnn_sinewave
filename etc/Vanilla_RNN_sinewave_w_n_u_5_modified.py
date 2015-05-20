@@ -613,7 +613,7 @@ if __name__ == "__main__":
                 L1_reg = 0, L2_reg = 0, 
                 initial_momentum = 0.5, final_momentum = 0.9,
                 momentum_switchover = 5,
-                n_epochs = 100)
+                n_epochs = 400)
 
     model.build_train(seq, targets)
 
