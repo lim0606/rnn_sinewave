@@ -454,7 +454,7 @@ def build_model(tparams, options):
     #return use_noise, x, mask, y, f_pred, cost, f_pred_h_and_c, f_emb, f_proj
     return use_noise, x, mask, y, f_pred, cost, f_hiddens
 
-def pred_error(f_pred, prepare_data, input_dim, output_dim, stride, data, iterator, verbose=False):
+def pred_error(f_pred, prepare_data, input_dim, output_dim, data, iterator, verbose=False):
     """
     Just compute the error
     f_pred: Theano fct computing the prediction
@@ -464,9 +464,8 @@ def pred_error(f_pred, prepare_data, input_dim, output_dim, stride, data, iterat
     for _, valid_index in iterator:
         x, mask, y = prepare_data([data[0][t] for t in valid_index],
                                   numpy.array(data[1])[valid_index],
-                                  input_dim=input_dim,
-                                  output_dim=output_dim, 
-                                  stride=stride, 
+                                  input_dim,
+                                  output_dim,  
                                   maxlen=None)
         preds = f_pred(x, mask)
         #targets = numpy.array(data[1])[valid_index]
@@ -480,7 +479,7 @@ def pred_error(f_pred, prepare_data, input_dim, output_dim, stride, data, iterat
     valid_err = valid_err / len(iterator)
     return valid_err
 
-def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1, output_dim=1):
+def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1):
     trng = RandomStreams(1234)
 
     # Used for dropout.
@@ -495,79 +494,6 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1, output_d
         if _x.ndim == 3:
             return _x[:, :, n * dim:(n + 1) * dim]
         return _x[:, n * dim:(n + 1) * dim]
-
-    #def _step(m_, x_, h_, c_): # m_: mask, x_: input, h_: previous hidden, c_: previous hidden
-    def _stepstep(h_, c_, y_): # m_: mask, h_: previous hidden, c_: previous hidden, *y_: raw inputs
-        #print "h_.ndim: ", h_.ndim
-        #print "c_.ndim: ", c_.ndim
-        
-        #print "len(y_): ", len(y_)
-        #print "y_[0].shape: ", y_[0].shape # y_[0] has size of n_samples x output_dim (output_dim = 1 for sinewave example)
-        #print "y_[0].ndim: ", y_[0].ndim
-
-        # build x_ from y_
-        x_ = y_
-
-        #print theano.pp(x_)
-        #h_printed_ = theano.printing.Print('h_ in step')(h_)
-        #c_printed_ = theano.printing.Print('c_ in step')(c_) 
-        #x_printed_ = theano.printing.Print('x_ in step')(x_)
-
-        #print "x_.ndim: ", x_.ndim
-        # embedding and activation
-        emb_ = tensor.dot(x_, tparams['Wemb'])
-        #emb_ = tensor.dot(x_printed_, tparams['Wemb']) 
-        #print "emb_.ndim: ", emb_.ndim
-
-        #emb_printed_ = theano.printing.Print('emb_ in step')(emb_)
-
-        state_below_ = (tensor.dot(emb_, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')])
-        #state_below_ = (tensor.dot(emb_printed_, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')])
-        #print "state_below_.ndim: ", state_below_.ndim
-        #print "tparams[lstm_W].ndim: ", tparams['lstm_W'].ndim
-        #state_below_printed_ = theano.printing.Print('state_below_ in step')(state_below_)
-
-         
-        preact = tensor.dot(h_, tparams[_p(prefix, 'U')])
-        #preact = tensor.dot(h_printed_, tparams[_p(prefix, 'U')])
-        preact += state_below_ # x_
-        #preact += state_below_printed_ # x_
-        preact += tparams[_p(prefix, 'b')]
-        #print "preact.ndim: ", preact.ndim
-
-        i = tensor.nnet.sigmoid(_slice(preact, 0, options['dim_proj']))
-        f = tensor.nnet.sigmoid(_slice(preact, 1, options['dim_proj']))
-        o = tensor.nnet.sigmoid(_slice(preact, 2, options['dim_proj']))
-        c = tensor.tanh(_slice(preact, 3, options['dim_proj']))
-
-        c = f * c_ + i * c
-        #c = f * c_printed_ + i * c
-        #c = m_[:, None] * c + (1. - m_)[:, None] * c_  # if data is valid m_ = 1, else m_ = 0 (ignore the data)
-        #c_printed = theano.printing.Print('c in step')(c)
-        #c = c_printed 
-
-        h = o * tensor.tanh(c)
-        #h = m_[:, None] * h + (1. - m_)[:, None] * h_
-        #h_printed = theano.printing.Print('h in step')(h)
-        #h = h_printed
-
-        if options['use_dropout']:
-            #h = dropout_layer(h, use_noise, trng)
-            proj = h * 0.5
-        else: 
-            proj = h
-        
-        #proj_printed = theano.printing.Print('proj in step')(proj)
-
-        y = tensor.dot(proj, tparams['U']) + tparams['b']  # tparams['U'] has size of dim_proj x output_dim (128 x 1 for sinewave example)
-        #y = tensor.dot(proj_printed, tparams['U']) + tparams['b']  # tparams['U'] has size of dim_proj x output_dim (128 x 1 for sinewave example)
-        #y_printed = theano.printing.Print('y in step')(y) 
-        #y = y_printed
-        #print "h.ndim: ", h.ndim
-        #print "c.ndim: ", c.ndim
-        #print "y.ndim: ", y.ndim
-        return h, c, y
-
 
     #def _step(m_, x_, h_, c_): # m_: mask, x_: input, h_: previous hidden, c_: previous hidden
     def _step(h_, c_, *y_): # m_: mask, h_: previous hidden, c_: previous hidden, *y_: raw inputs
@@ -650,37 +576,25 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1, output_d
     #n_timesteps = 150
     #input_dim = y0.shape[0]
     n_samples = y0.shape[1]
-    output_dimd = y0.shape[2]
+    output_dim = y0.shape[2]
     dim_proj = options['dim_proj']
 
-    if output_dim > 1 and input_dim > 1:
-        print "boolean"
-        rval, updates = theano.scan(_stepstep,
-                                    #sequences=[mask, state_below],
-                                    outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved
-                                                  dict(initial=c0, taps=[-1]), # h0.ndim = 2 will be preserved
-                                                  dict(initial=y0.reshape([n_samples, output_dimd]), taps=[-1])], # y0.ndim = 3 will become y_[0].ndim = 2
-                                                                                  # usage of taps is tricky!! fuck!!
-                                    name=_p(prefix, '_layers'),
-                                    n_steps=n_timesteps)
-    else:
-        raise NameError('HiThere')
-        ''' 
-        y_taps = []
-        for t in xrange(-input_dim, 0, 1):
-            y_taps.append(t)
+    y_taps = []
+    for t in xrange(-input_dim, 0, 1):
+        y_taps.append(t)
 
-        if input_dim == 1: 
-            rval, updates = theano.scan(_step,
+    if input_dim == 1: 
+        rval, updates = theano.scan(_step,
                                     #sequences=[mask, state_below],
                                     outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved
                                                   dict(initial=c0, taps=[-1]), # h0.ndim = 2 will be preserved
-                                                  dict(initial=y0.reshape([n_samples, output_dimd]), taps=y_taps)], # y0.ndim = 3 will become y_[0].ndim = 2
+                                                  dict(initial=y0.reshape([n_samples, output_dim]), taps=y_taps)], # y0.ndim = 3 will become y_[0].ndim = 2
                                                                                   # usage of taps is tricky!! fuck!!
                                     name=_p(prefix, '_layers'),
                                     n_steps=n_timesteps)
-        else: 
-            rval, updates = theano.scan(_step,
+
+    else: 
+        rval, updates = theano.scan(_step,
                                     #sequences=[mask, state_below],
                                     outputs_info=[dict(initial=h0, taps=[-1]), # h0.ndim = 2 will be preserved 
                                                   dict(initial=c0, taps=[-1]), # h0.ndim = 2 will be preserved
@@ -688,7 +602,6 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1, output_d
                                                                                   # usage of taps is tricky!! fuck!!
                                     name=_p(prefix, '_layers'),
                                     n_steps=n_timesteps)
-        '''
 
     f_predpred = theano.function(inputs=[h0, c0, y0], 
                              outputs=rval[2], 
@@ -698,7 +611,7 @@ def build_lstm_pred_model(tparams, options, n_timesteps=1, input_dim=1, output_d
 
     return f_predpred
 
-def build_rnn_pred_model(tparams, options, n_timesteps=1, input_dim=1, output_dim=1):
+def build_rnn_pred_model(tparams, options, n_timesteps=1, input_dim=1):
     trng = RandomStreams(1234)
 
     # Used for dropout.
@@ -810,8 +723,7 @@ def train_lstm(
     decay_c=0.,  # Weight decay for the classifier applied to the U weights.
     lrate=0.001, #0.0001,  # Learning rate for sgd (not used for adadelta and rmsprop)
     input_dim = 1, # input_dim, equivalent to Vocabulary size for sentiment analysis
-    output_dim = 1, # output_dim,
-    stride = 1, # stride in input 
+    output_dim = 1, # output_dim, 
     #n_words=10000,  # Vocabulary size
     pred_steps = 110, # number of frames to be predicted 
     initializer=ortho_weight, # weight initialization method
@@ -846,21 +758,16 @@ def train_lstm(
     ## print minibatch data 
     x, mask, y = prepare_data([train[0][t] for t in [0]], 
                               [train[1][t] for t in [0]], 
-                              input_dim=input_dim,
-                              output_dim=output_dim,
-                              stride=stride)
-
+                              input_dim, output_dim)
     #print "x.shape: ", x.shape
     #print "y.shape: ", y.shape
-    x_plot = x[:,0,:].reshape(x.shape[0],x.shape[2])
-    y_plot = y[:,0,:].reshape(y.shape[0],y.shape[2])
     plt.close('all')
     fig_data = plt.figure()
-    input_seq = plt.plot(numpy.linspace(1, x_plot.shape[0], x_plot.shape[0]), x_plot, linewidth=2, label='u_t, input seq')
-    output = plt.plot(numpy.linspace(1, y_plot.shape[0], y_plot.shape[0]), y_plot, linestyle='--', label='y_t, output')
+    input_seq = plt.plot(numpy.linspace(1, x.shape[0], x.shape[0]), x.reshape([x.shape[0], x.shape[2]]), label='u_t, input seq')
+    output = plt.plot(numpy.linspace(1, x.shape[0], y.shape[0]), y.reshape([y.shape[0], y.shape[2]]), linestyle='--', label='y_t, output')
     plt.title('sample input seq(u_t) and its output(y_t)')
     plt.legend()
-    plt.savefig('results/0prepare_data_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std))
+    plt.savefig('results/prepare_data_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std))
 
     ydim = output_dim #numpy.max(train[1]) + 1 # why should y dimension be one larger than existing y values? 
     #print 'ydim %d' % numpy.max(train[1])
@@ -961,14 +868,14 @@ def train_lstm(
                 #print len(x)
                 #print len(y)
                 #print len(x[0])
-                x, mask, y = prepare_data(x, y, input_dim=input_dim, output_dim=output_dim, stride=stride)
+                x, mask, y = prepare_data(x, y, input_dim, output_dim)
                 #print "x.shape", x.shape 
                 #print "y.shape", y.shape
                 #print "len(y) = %d" % (len(y))
                 #print x 
                 #print y 
-                #raise NameError('HiThere')
- 
+                #print "asdf"
+
                 # add noise 
                 # print "x.shape", x.shape
                 x = x + noise_std * numpy.random.randn(x.shape[0], x.shape[1], x.shape[2]).astype(config.floatX)
@@ -1006,10 +913,10 @@ def train_lstm(
 
                 if numpy.mod(uidx, validFreq) == 0:
                     use_noise.set_value(0.)
-                    train_err = pred_error(f_pred, prepare_data, input_dim, output_dim, stride, train, kf)
-                    valid_err = pred_error(f_pred, prepare_data, input_dim, output_dim, stride, valid,
+                    train_err = pred_error(f_pred, prepare_data, input_dim, output_dim, train, kf)
+                    valid_err = pred_error(f_pred, prepare_data, input_dim, output_dim, valid,
                                            kf_valid)
-                    test_err = pred_error(f_pred, prepare_data, input_dim, output_dim, stride, test, kf_test)
+                    test_err = pred_error(f_pred, prepare_data, input_dim, output_dim, test, kf_test)
 
                     history_errs.append([valid_err, test_err])
 
@@ -1048,9 +955,9 @@ def train_lstm(
 
     use_noise.set_value(0.)
     kf_train_sorted = get_minibatches_idx(len(train[0]), batch_size)
-    train_err = pred_error(f_pred, prepare_data, input_dim, output_dim, stride, train, kf_train_sorted)
-    valid_err = pred_error(f_pred, prepare_data, input_dim, output_dim, stride, valid, kf_valid)
-    test_err = pred_error(f_pred, prepare_data, input_dim, output_dim, stride, test, kf_test)
+    train_err = pred_error(f_pred, prepare_data, input_dim, output_dim, train, kf_train_sorted)
+    valid_err = pred_error(f_pred, prepare_data, input_dim, output_dim, valid, kf_valid)
+    test_err = pred_error(f_pred, prepare_data, input_dim, output_dim, test, kf_test)
 
     print 'Train ', train_err, 'Valid ', valid_err, 'Test ', test_err
 
@@ -1070,9 +977,9 @@ def train_lstm(
     use_noise.set_value(0.)
 
     if model_options['encoder']=='lstm':
-        f_predpred = build_lstm_pred_model(tparams, model_options, n_timesteps=pred_steps, input_dim=input_dim, output_dim=output_dim)
+        f_predpred = build_lstm_pred_model(tparams, model_options, n_timesteps=pred_steps, input_dim=input_dim)
     elif model_options['encoder']=='rnn':
-        f_predpred = build_rnn_pred_model(tparams, model_options, n_timesteps=pred_steps, input_dim=input_dim, output_dim=output_dim)
+        f_predpred = build_rnn_pred_model(tparams, model_options, n_timesteps=pred_steps, input_dim=input_dim)
  
     kf = get_minibatches_idx(len(test[0]), batch_size, shuffle=True)
     #kf = get_minibatches_idx(len(test[0]), 5, shuffle=True)
@@ -1110,16 +1017,10 @@ def train_lstm(
                 plt.savefig('results/0data_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f_test_index_%d.png' % (model_options['encoder'], optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std, test_index[t]))
 
  
-        x, mask, y = prepare_data(x, y, input_dim=input_dim, output_dim=output_dim, stride=stride)
-        #print "x.shape: ", x.shape
-        #print "y.shape: ", y.shape
-        
-        xx = x[:(50-input_dim)/stride+1, :, :]
-        maskmask = mask[:(50-input_dim)/stride+1, :]
-        yy = y[:(50-input_dim)/stride+1, :, :]
-
-        #print "xx.shape: ", xx.shape
-        #print "yy.shape: ", yy.shape
+        x, mask, y = prepare_data(x, y, input_dim, output_dim)
+        xx = x[:50, :, :]
+        maskmask = mask[:50, :]
+        yy = y[:50, :]
   
         preds_y_all = f_pred(x, mask) # for debugging
         
@@ -1127,20 +1028,20 @@ def train_lstm(
         #print preds_y.shape
         #print preds_y[-input_dim:].shape
         #print x.shape
-        #print x[(50-input_dim)/stride+1,:,:].shape
+        #print x[50,:,:].shape
 
         if model_options['encoder']=='lstm':
             preds_h = f_hiddens[0](xx, mask)
             preds_c = f_hiddens[1](xx, maskmask)
 
             #predpred = f_predpred(preds_h[-1], preds_c[-1], preds_y[-input_dim:])
-            predpred = f_predpred(preds_h[-1], preds_c[-1], [x[(50-input_dim)/stride+1,:,:]])
+            predpred = f_predpred(preds_h[-1], preds_c[-1], x[50,:,:].transpose().reshape([input_dim, x.shape[1], 1]))
 
         elif model_options['encoder']=='rnn':
             preds_h = f_hiddens[0](xx, mask)
 
             #predpred = f_predpred(preds_h[-1], preds_y[-input_dim:])
-            predpred = f_predpred(preds_h[-1], [x[(50-input_dim)/stride+1,:,:]])
+            predpred = f_predpred(preds_h[-1], x[50,:,:].transpose().reshape([input_dim, x.shape[1], 1]))
           
         #print "preds_y.shape: ", preds_y.shape
         #print "predpred.shape", predpred.shape
@@ -1150,10 +1051,9 @@ def train_lstm(
         #print "y_pred_total.shape: ", y_pred_total.shape
         #print "y.shape: ", y.shape
         #print "predpred.shape: ", predpred.shape
-        #print "y[(50-input_dim)/stride+1:,:,:]).shape: ", y[(50-input_dim)/stride+1:,:,:].shape
 
         # estimate error
-        pred_err = pred_err + ((predpred - y[(50-input_dim)/stride+1:,:,:]) ** 2).mean(axis=1, keepdims=True).mean(axis=2, keepdims=True).reshape(pred_steps,)
+        pred_err = pred_err + ((predpred - y[50:,:,:]) ** 2).mean(axis=1, keepdims=True).reshape(pred_steps,)
         #print "pred_err.shape: ", pred_err.shape
 
 
@@ -1164,23 +1064,11 @@ def train_lstm(
                 fig_pred = plt.figure()
 
                 # Graph 1
-                xxx = x[0,t,:].reshape(input_dim,1)
-                for i in xrange(1, x.shape[0]):
-                    xxx = numpy.concatenate((xxx, x[i,t,:].reshape(input_dim,1)), axis=0)
-                
-                yyy = y[0,t,:].reshape(input_dim,1)
-                yyy_pred_total = y_pred_total[0,t,:].reshape(input_dim,1)
-                for i in xrange(1, y.shape[0]):
-                    yyy = numpy.concatenate((yyy, y[i,t,:].reshape(input_dim,1)), axis=0)
-                    yyy_pred_total = numpy.concatenate((yyy_pred_total, y_pred_total[i,t,:].reshape(input_dim,1)), axis=0)
-                print "yyy.shape: ", yyy.shape
-                print "yyy_pred_total.shape: ", yyy_pred_total.shape
                 #input_seq, = plt.plot(x[:,t,-1], label='x_t, input seq')
-                true_targets, = plt.plot(yyy, label='y_t, true ouput') #true_targets, = plt.plot(y[:,t], label='y_t, true ouput')
+                true_targets, = plt.plot(y[:,t], label='y_t, true ouput')
                 #ggg, = plt.plot(preds_y_all[:,t,0], linestyle='--', label='y_t_pred, model output')
-                #guessed_targets, = plt.plot(y_pred_total[:,t,0], linestyle='--', linewidth=2, label='y_t_pred, model output')
-                guessed_targets, = plt.plot(yyy_pred_total, linestyle='--', linewidth=2, label='y_t_pred, model output')
-                verticalline = plt.axvline(x=(50-input_dim)/stride, color='r', linestyle=':')
+                guessed_targets, = plt.plot(y_pred_total[:,t,0], linestyle='--', linewidth=2, label='y_t_pred, model output')
+                verticalline = plt.axvline(x=49, color='r', linestyle=':')
                 plt.grid()
                 plt.legend()
                 plt.title('true output vs. model output, test_index=%d' % test_index[t])
@@ -1211,11 +1099,9 @@ def train_lstm(
 
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
-    input_dim=5
-    output_dim=input_dim # 1
-    stride=input_dim # 1
+    input_dim = 5
     dim_proj = 100
-    pred_steps = ((160-(input_dim+output_dim))/stride+1) - ((50-input_dim)/stride+1)
+    pred_steps = 160-1-input_dim+1-50
     noise_std = 0.001
     encoder = 'lstm'
     #mode = 'train'
@@ -1224,7 +1110,7 @@ if __name__ == '__main__':
     max_epochs=800
     optimizer=adadelta
     initializer=ortho_weight
-    filename="models/0model_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.npz" % (encoder, optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std)
+    filename="models/model_%s_%s_%s_input_dim_%d_hidden_%d_noise_std_%.4f.npz" % (encoder, optimizer.__name__, initializer.__name__, input_dim, dim_proj, noise_std)
     if mode=='train':
         reload_model=""
         saveto=filename
@@ -1239,8 +1125,6 @@ if __name__ == '__main__':
     train_lstm(
             dim_proj=dim_proj,
             input_dim=input_dim,
-            output_dim=output_dim,
-            stride=stride,
             pred_steps=pred_steps,
             reload_model=reload_model,
             saveto=saveto,

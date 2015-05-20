@@ -12,12 +12,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 plt.ion()
 
-def prepare_data(seqs, labels, input_dim, stride=1, output_dim=None, maxlen=None):
-
-    if output_dim is None:
-        output_dim=input_dim
-
-    set_dim=input_dim+output_dim
+def prepare_data(seqs, labels, input_dim, output_dim, maxlen=None):
 
     #print seqs
     #print labels
@@ -54,18 +49,16 @@ def prepare_data(seqs, labels, input_dim, stride=1, output_dim=None, maxlen=None
     maxlen = numpy.max(lengths)
     #print "maxlen = %d" % maxlen 
     #print "len(seqs) = %d, len(labels) = %d" % (len(seqs), len(labels))
-    x = numpy.zeros(( (maxlen-set_dim)/stride+1, n_samples, input_dim)).astype(theano.config.floatX)
-    x_mask = numpy.zeros(( (maxlen-set_dim)/stride+1, n_samples)).astype(theano.config.floatX)
-    y = numpy.zeros(( (maxlen-set_dim)/stride+1, n_samples, output_dim)).astype(theano.config.floatX)
-
+    x = numpy.zeros((maxlen-input_dim+1, n_samples, input_dim)).astype(theano.config.floatX)
+    x_mask = numpy.zeros((maxlen-input_dim+1, n_samples)).astype(theano.config.floatX)
+    y = numpy.zeros((maxlen-input_dim+1, n_samples, output_dim)).astype(theano.config.floatX)
     for idx, (s, l) in enumerate(zip(seqs, labels)):
-        for i in range(0, (lengths[idx]-set_dim)/stride+1):
-            x[i, idx, :] = s[i*stride:i*stride+input_dim]
-            y[i, idx, :] = s[i*stride+input_dim:i*stride+input_dim+output_dim]
-
+        for i in range(0, lengths[idx]-input_dim+1):
+            x[i, idx, :] = s[i:i+input_dim]
         #print "input_dim = %d" % input_dim 
         #print "length = %d" % lengths[idx]
-        x_mask[:(lengths[idx]-set_dim)/stride+1, idx] = 1.
+        x_mask[:lengths[idx]-input_dim+1, idx] = 1.
+        y[:lengths[idx]-input_dim+1, idx, :] = numpy.array(l[input_dim-1:lengths[idx]]).reshape([lengths[idx]-input_dim+1, output_dim])
 
     #print "x.shape: ", x.shape
     #print "y.shape: ", y.shape
@@ -111,12 +104,10 @@ def load_data(valid_portion=0.1, maxlen=None, sort_by_len=False):
     #print seq_sine_alpha_train.shape
     #print seq_sine_beta_train.shape
 
-    '''sinewave_base = numpy.linspace(0, 2 * math.pi, length_sinewave)
+    sinewave_base = numpy.linspace(0, 2 * math.pi, length_sinewave)
     sinewave_x = sinewave_base[:-1:]
     sinewave_xp1 = sinewave_base[1::]
     #print "len(sinewave_x) = %d, len(sinewave_xp1) = %d" %(len(sinewave_x), len(sinewave_xp1))
-    '''
-    sinewave_x = numpy.linspace(0, 2 * math.pi, length_sinewave)
 
     train_set_x = []
     train_set_y = []
@@ -125,8 +116,7 @@ def load_data(valid_portion=0.1, maxlen=None, sort_by_len=False):
 
     for i in range(n_train):
         train_set_x.append(numpy.sin(seq_sine_alpha_train[i] * sinewave_x + seq_sine_beta_train[i] * 2 * math.pi).tolist())
-        #train_set_y.append(numpy.sin(seq_sine_alpha_train[i] * sinewave_xp1 + seq_sine_beta_train[i] * 2 * math.pi).tolist())
-        train_set_y.append( ( -1 * numpy.ones(length_sinewave) ).tolist() )
+        train_set_y.append(numpy.sin(seq_sine_alpha_train[i] * sinewave_xp1 + seq_sine_beta_train[i] * 2 * math.pi).tolist())
 
     train_set = (train_set_x, train_set_y)
     #print "train_set: " 
@@ -135,8 +125,7 @@ def load_data(valid_portion=0.1, maxlen=None, sort_by_len=False):
 
     for i in range(n_test):
         test_set_x.append(numpy.sin(seq_sine_alpha_test[i] * sinewave_x + seq_sine_beta_test[i] * 2 * math.pi).tolist())
-        #test_set_y.append(numpy.sin(seq_sine_alpha_test[i] * sinewave_xp1 + seq_sine_beta_test[i] * 2 * math.pi).tolist())
-        test_set_y.append( ( -1 * numpy.ones(length_sinewave) ).tolist() )
+        test_set_y.append(numpy.sin(seq_sine_alpha_test[i] * sinewave_xp1 + seq_sine_beta_test[i] * 2 * math.pi).tolist())
 
     test_set = (test_set_x, test_set_y)    
     del test_set_x, test_set_y
@@ -192,4 +181,4 @@ def load_data(valid_portion=0.1, maxlen=None, sort_by_len=False):
     #print train_set
     return train_set, valid_set, test_set  
     # train_set, valid_set, test_set is tuple with two element x and y
-    # Each tuple element is a list with length its number of data
+    # each tuple element is a list with length its number of data
